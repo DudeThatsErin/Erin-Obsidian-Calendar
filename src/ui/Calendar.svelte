@@ -7,12 +7,13 @@
     ICalendarSource,
     configureGlobalMomentLocale,
   } from "obsidian-calendar-ui";
-  import { onDestroy } from "svelte";
+  import { afterUpdate, onDestroy } from "svelte";
 
   import type { ISettings } from "src/settings";
   import { activeFile, dailyNotes, settings, weeklyNotes } from "./stores";
 
   let today: Moment;
+  let calendarEl: HTMLDivElement;
 
   $: today = getToday($settings);
 
@@ -36,6 +37,15 @@
     return window.moment();
   }
 
+  afterUpdate(() => {
+    const format = $settings.weekdayLabelFormat || "ddd";
+    calendarEl?.querySelectorAll<HTMLTableCellElement>("thead th").forEach((heading, index) => {
+      if ($settings.showWeeklyNote && index === 0) return;
+      const dayIndex = $settings.showWeeklyNote ? index - 1 : index;
+      heading.textContent = today.clone().startOf("week").add(dayIndex, "day").format(format);
+    });
+  });
+
   // 1 minute heartbeat to keep `today` reflecting the current day
   let heartbeat = setInterval(() => {
     tick();
@@ -53,7 +63,8 @@
   });
 </script>
 
-<CalendarBase
+<div bind:this={calendarEl}>
+  <CalendarBase
   {sources}
   {today}
   {onHoverDay}
@@ -66,4 +77,5 @@
   localeData={today.localeData()}
   selectedId={$activeFile}
   showWeekNums={$settings.showWeeklyNote}
-/>
+  />
+</div>

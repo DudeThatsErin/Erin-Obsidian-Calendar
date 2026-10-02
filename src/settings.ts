@@ -8,6 +8,7 @@ import type CalendarPlugin from "./main";
 
 export interface ISettings {
   wordsPerDot: number;
+  weekdayLabelFormat: string;
   weekStart: IWeekStartOption;
   shouldConfirmBeforeCreate: boolean;
 
@@ -35,6 +36,7 @@ export const defaultSettings = Object.freeze({
   weekStart: "locale" as IWeekStartOption,
 
   wordsPerDot: DEFAULT_WORDS_PER_DOT,
+  weekdayLabelFormat: "ddd",
 
   showWeeklyNote: false,
   weeklyNoteFormat: "",
@@ -78,6 +80,7 @@ export class CalendarSettingsTab extends PluginSettingTab {
       text: "General Settings",
     });
     this.addDotThresholdSetting();
+    this.addWeekdayLabelFormatSetting();
     this.addWeekStartSetting();
     this.addConfirmCreateSetting();
     this.addShowWeeklyNoteSetting();
@@ -125,7 +128,9 @@ export class CalendarSettingsTab extends PluginSettingTab {
     const { moment } = window;
 
     const localizedWeekdays = moment.weekdays();
-    const localeWeekStartNum = window._bundledLocaleWeekSpec.dow;
+    // `dow` can legitimately be 0 (Sunday), so use nullish fallback rather
+    // than `|| 1`. Some locales do not populate Obsidian's bundled week spec.
+    const localeWeekStartNum = window._bundledLocaleWeekSpec?.dow ?? 1;
     const localeWeekStart = moment.weekdays()[localeWeekStartNum];
 
     new Setting(this.containerEl)
@@ -157,6 +162,19 @@ export class CalendarSettingsTab extends PluginSettingTab {
           this.plugin.writeOptions(() => ({
             shouldConfirmBeforeCreate: value,
           }));
+        });
+      });
+  }
+
+  addWeekdayLabelFormatSetting(): void {
+    new Setting(this.containerEl)
+      .setName("Weekday label format")
+      .setDesc("Moment.js format for weekday headings: ddd for Mon, dd for Mo, or d for M.")
+      .addText((textfield) => {
+        textfield.setPlaceholder("ddd");
+        textfield.setValue(this.plugin.options.weekdayLabelFormat || "ddd");
+        textfield.onChange(async (value) => {
+          await this.plugin.writeOptions(() => ({ weekdayLabelFormat: value.trim() || "ddd" }));
         });
       });
   }

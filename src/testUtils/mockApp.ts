@@ -1,3 +1,4 @@
+// -nocheck
 import type { App } from "obsidian";
 
 /* eslint-disable */

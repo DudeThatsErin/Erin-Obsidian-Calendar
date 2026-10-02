@@ -9,10 +9,12 @@ export function getDefaultSettings(
       weekStart: "sunday",
       shouldConfirmBeforeCreate: false,
       wordsPerDot: 50,
+      weekdayLabelFormat: "ddd",
       showWeeklyNote: false,
       weeklyNoteFolder: "",
       weeklyNoteFormat: "",
       weeklyNoteTemplate: "",
+      localeOverride: "system-default",
     },
     overrides
   );

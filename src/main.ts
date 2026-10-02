@@ -9,12 +9,13 @@ import {
   ISettings,
 } from "./settings";
 import CalendarView from "./view";
+import { CalendarEmbed } from "./embed";
 
 declare global {
   interface Window {
     app: App;
     moment: () => Moment;
-    _bundledLocaleWeekSpec: WeekSpec;
+    _bundledLocaleWeekSpec?: WeekSpec;
   }
 }
 
@@ -60,36 +61,52 @@ export default class CalendarPlugin extends Plugin {
         if (checking) {
           return !appHasPeriodicNotesPluginLoaded();
         }
-        this.view.openOrCreateWeeklyNote(window.moment(), false);
+        void this.getOrCreateCalendarView().then((view) =>
+          view.openOrCreateWeeklyNote(window.moment(), false)
+        );
       },
     });
 
     this.addCommand({
       id: "reveal-active-note",
       name: "Reveal active note",
-      callback: () => this.view.revealActiveNote(),
+      callback: () =>
+        void this.getOrCreateCalendarView().then((view) =>
+          view.revealActiveNote()
+        ),
     });
 
     await this.loadOptions();
 
     this.addSettingTab(new CalendarSettingsTab(this.app, this));
+    this.registerMarkdownCodeBlockProcessor("erin-calendar", (_source, el, ctx) => {
+      ctx.addChild(new CalendarEmbed(el, this));
+    });
 
     if (this.app.workspace.layoutReady) {
-      this.initLeaf();
+      void this.initLeaf();
     } else {
       this.registerEvent(
-        this.app.workspace.on("layout-ready", this.initLeaf.bind(this))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.app.workspace as any).on("layout-ready", () => void this.initLeaf())
       );
     }
   }
 
-  initLeaf(): void {
-    if (this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR).length) {
-      return;
-    }
-    this.app.workspace.getRightLeaf(false).setViewState({
+  async initLeaf(): Promise<CalendarView> {
+    const existingLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR)[0];
+    if (existingLeaf) return existingLeaf.view as CalendarView;
+    const mode = (this.app.vault as unknown as { getConfig: (key: string) => string }).getConfig("defaultViewMode");
+    const leaf = this.app.workspace.getRightLeaf(false);
+    await leaf.setViewState({
       type: VIEW_TYPE_CALENDAR,
+      state: { mode },
     });
+    return leaf.view as CalendarView;
+  }
+
+  async getOrCreateCalendarView(): Promise<CalendarView> {
+    return this.initLeaf();
   }
 
   async loadOptions(): Promise<void> {

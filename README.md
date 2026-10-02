@@ -14,6 +14,17 @@ Obsidian Community Plugins directory.
 Releases use plain numeric tags such as `0.0.1`; there is no `v` prefix.
 BRAT downloads the release `main.js`, `styles.css`, and `manifest.json` files.
 
+## Embed in a note
+
+Add an empty `erin-calendar` code block in Reading view:
+
+````markdown
+```erin-calendar
+```
+````
+
+The embedded calendar uses the same settings as the sidebar calendar.
+
 ## Features
 
 - Navigate to existing daily notes from a calendar view.

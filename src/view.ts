@@ -220,7 +220,7 @@ export default class CalendarView extends ItemView {
   }
 
   private updateActiveFile(): void {
-    const { view } = this.app.workspace.activeLeaf;
+    const { view } = this.app.workspace.activeLeaf || {};
 
     let file = null;
     if (view instanceof FileView) {
@@ -237,7 +237,7 @@ export default class CalendarView extends ItemView {
     const { moment } = window;
     const { activeLeaf } = this.app.workspace;
 
-    if (activeLeaf.view instanceof FileView) {
+    if (activeLeaf?.view instanceof FileView) {
       // Check to see if the active note is a daily-note
       let date = getDateFromFile(activeLeaf.view.file, "day");
       if (date) {
@@ -306,7 +306,7 @@ export default class CalendarView extends ItemView {
     const leaf = inNewSplit
       ? workspace.splitActiveLeaf()
       : workspace.getUnpinnedLeaf();
-    await leaf.openFile(existingFile, { active : true, mode });
+    await leaf.openFile(existingFile, { active: true, state: { mode } });
 
     activeFile.setFile(existingFile);
   }

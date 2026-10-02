@@ -11,26 +11,28 @@
     IWeekStartOption,
   } from "obsidian-calendar-ui";
 
-  import {
-    getCalendarMonth,
-    isWeekend,
-  } from "./calendarMath";
-  import Day from "./Day.svelte";
+  import type { CalendarViewMode } from "../../settings";
+  import { getCalendarMonth } from "./calendarMath";
   import {
     getCalendarWeekStartIndex,
     getCalendarWeekdayLabels,
     resolveCalendarLocale,
     withCalendarLocale,
   } from "./locale";
-  import { getDailyMetadata, getWeeklyMetadata } from "./metadata";
+  import MonthGrid from "./MonthGrid.svelte";
   import Nav from "./Nav.svelte";
   import type { ICalendarSource } from "./types";
-  import WeekNum from "./WeekNum.svelte";
+  import YearCalendar from "./YearCalendar.svelte";
 
   export let localeOverride: ILocaleOverride = "system-default";
   export let weekStart: IWeekStartOption = "locale";
   export let weekdayLabelFormat: string = "ddd";
   export let showWeekNums: boolean = false;
+  /** Changes whenever cached year metadata must be recomputed. */
+  export let metadataKey: string = "";
+  export let viewMode: CalendarViewMode = "month";
+  export let onViewModeChange: (viewMode: CalendarViewMode) => void = () =>
+    undefined;
 
   export let onHoverDay: (
     date: Moment,
@@ -83,15 +85,28 @@
   );
 
   export function incrementDisplayedMonth(): void {
-    displayedMonth = localizedDisplayedMonth.clone().add(1, "month");
+    displayedMonth = localizedDisplayedMonth
+      .clone()
+      .add(1, viewMode === "year" ? "year" : "month");
   }
 
   export function decrementDisplayedMonth(): void {
-    displayedMonth = localizedDisplayedMonth.clone().subtract(1, "month");
+    displayedMonth = localizedDisplayedMonth
+      .clone()
+      .subtract(1, viewMode === "year" ? "year" : "month");
   }
 
   export function resetDisplayedMonth(): void {
     displayedMonth = localizedToday.clone();
+  }
+
+  function toggleViewMode(): void {
+    onViewModeChange(viewMode === "month" ? "year" : "month");
+  }
+
+  function selectMonth(monthToDisplay: Moment): void {
+    displayedMonth = monthToDisplay.clone();
+    onViewModeChange("month");
   }
 </script>
 
@@ -100,59 +115,50 @@
     today={localizedToday}
     displayedMonth={localizedDisplayedMonth}
     {locale}
+    {viewMode}
     {incrementDisplayedMonth}
     {decrementDisplayedMonth}
     {resetDisplayedMonth}
+    onToggleView={toggleViewMode}
   />
-  <table class="calendar">
-    <colgroup>
-      {#if showWeekNums}
-        <col />
-      {/if}
-      {#each month[0].days as date}
-        <col class:weekend={isWeekend(date)} />
-      {/each}
-    </colgroup>
-    <thead>
-      <tr>
-        {#if showWeekNums}
-          <th>W</th>
-        {/if}
-        {#each daysOfWeek as dayOfWeek}
-          <th>{dayOfWeek}</th>
-        {/each}
-      </tr>
-    </thead>
-    <tbody>
-      {#each month as week (week.days[0].format())}
-        <tr>
-          {#if showWeekNums}
-            <WeekNum
-              {...week}
-              weekStart={weekStartIndex}
-              metadata={getWeeklyMetadata(sources, week.days[0])}
-              onClick={onClickWeek}
-              onContextMenu={onContextMenuWeek}
-              onHover={onHoverWeek}
-              {selectedId}
-            />
-          {/if}
-          {#each week.days as date (date.format())}
-            <Day
-              {date}
-              today={localizedToday}
-              displayedMonth={localizedDisplayedMonth}
-              onClick={onClickDay}
-              onContextMenu={onContextMenuDay}
-              onHover={onHoverDay}
-              metadata={getDailyMetadata(sources, date)}
-              {selectedId}
-            />
-          {/each}
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  {#if viewMode === "year"}
+    <YearCalendar
+      displayedMonth={localizedDisplayedMonth}
+      today={localizedToday}
+      {locale}
+      weekStart={weekStartIndex}
+      {localeFirstDayOfYear}
+      {daysOfWeek}
+      {sources}
+      {selectedId}
+      {showWeekNums}
+      {metadataKey}
+      {onHoverDay}
+      {onHoverWeek}
+      {onContextMenuDay}
+      {onContextMenuWeek}
+      {onClickDay}
+      {onClickWeek}
+      onSelectMonth={selectMonth}
+    />
+  {:else}
+    <MonthGrid
+      {month}
+      displayedMonth={localizedDisplayedMonth}
+      today={localizedToday}
+      {daysOfWeek}
+      {sources}
+      {selectedId}
+      weekStart={weekStartIndex}
+      {showWeekNums}
+      {onHoverDay}
+      {onHoverWeek}
+      {onContextMenuDay}
+      {onContextMenuWeek}
+      {onClickDay}
+      {onClickWeek}
+    />
+  {/if}
 </div>
 
 <style>
@@ -179,27 +185,5 @@
 
   .container.is-mobile {
     padding: 0;
-  }
-
-  th {
-    text-align: center;
-  }
-
-  .weekend {
-    background-color: var(--color-background-weekend);
-  }
-
-  .calendar {
-    border-collapse: collapse;
-    width: 100%;
-  }
-
-  th {
-    background-color: var(--color-background-heading);
-    color: var(--color-text-heading);
-    font-size: 0.6em;
-    letter-spacing: 1px;
-    padding: 4px;
-    text-transform: uppercase;
   }
 </style>

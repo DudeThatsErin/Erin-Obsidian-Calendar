@@ -9,6 +9,12 @@ export interface ICalendarWeek {
 
 export type ICalendarMonth = ICalendarWeek[];
 
+export interface ICalendarYearMonth {
+  /** The first day of the calendar month represented by this grid. */
+  month: Moment;
+  weeks: ICalendarMonth;
+}
+
 function daysInYear(year: number): number {
   return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
     ? 366
@@ -83,6 +89,37 @@ export function getCalendarMonth(
   }
 
   return month;
+}
+
+/**
+ * Generate twelve independent month grids for the year containing the cursor.
+ *
+ * Each grid retains the locale and per-calendar week-start calculation used by
+ * the normal month view. The year view can then hide adjacent-month dates
+ * without changing the underlying week layout or week-number actions.
+ */
+export function getCalendarYearMonths(
+  displayedMonth: Moment,
+  locale: string,
+  weekStart: number,
+  localeFirstDayOfYear: number
+): ICalendarYearMonth[] {
+  const startOfYear = withCalendarLocale(displayedMonth, locale)
+    .startOf("year")
+    .startOf("day");
+
+  return Array.from({ length: 12 }, (_value, monthIndex) => {
+    const month = startOfYear.clone().month(monthIndex).date(1);
+    return {
+      month,
+      weeks: getCalendarMonth(
+        month,
+        locale,
+        weekStart,
+        localeFirstDayOfYear
+      ),
+    };
+  });
 }
 
 export function getCalendarWeekStart(date: Moment, weekStart: number): Moment {

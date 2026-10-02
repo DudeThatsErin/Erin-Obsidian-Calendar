@@ -7,6 +7,7 @@ export {
 export {
   getCalendarDayUID,
   getCalendarMonth,
+  getCalendarYearMonths,
   getCalendarWeekStart,
   getCalendarWeekNumber,
   getCalendarWeekUID,

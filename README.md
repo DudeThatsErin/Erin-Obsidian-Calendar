@@ -40,11 +40,13 @@ only to that block—they are not saved and do not change the sidebar or any
 other calendar. Settings omitted from the block continue to follow the sidebar
 setting, including later changes to it.
 
-For example, this calendar starts on Monday, uses single-letter weekday
-headings, has no date-tag markers, and creates notes without confirmation:
+For example, this calendar opens as a twelve-month overview, starts on Monday,
+uses single-letter weekday headings, has no date-tag markers, and creates notes
+without confirmation:
 
 ````markdown
 ```erin-calendar
+calendarView: "year"
 weekdayLabelFormat: "d"
 weekStart: "monday"
 shouldConfirmBeforeCreate: false
@@ -59,6 +61,7 @@ YAML reads them as text.
 ````markdown
 ```erin-calendar
 # Display
+calendarView: "month" # month or year
 wordsPerDot: 250
 weekdayLabelFormat: "ddd"
 weekStart: "locale" # locale, sunday, monday, tuesday, wednesday, thursday, friday, saturday
@@ -89,6 +92,13 @@ configured Calendar or Periodic Notes value. If a block contains an unknown or
 invalid setting, the calendar still renders and shows an explanation beneath
 that block.
 
+Set `calendarView: "year"` to open that embed as a responsive January–December
+overview. The **Month**/**Year** button in the calendar header lets you switch
+layouts at any time without changing another embedded calendar. In a normal
+Calendar tab, choose the default layout in **Settings → Erin Calendar →
+Calendar view**; the same header button is always available there too. Click a
+month name in the year overview to inspect that month in detail.
+
 Use lowercase `gggg` and `ww` when weekly filenames should follow the block's
 `weekStart` choice. Uppercase `GGGG` and `WW` are ISO week tokens and always
 use Monday-based week numbering.
@@ -113,6 +123,9 @@ personal workflow improvements:
 - Each embedded calendar can now use its own complete set of Calendar
   settings, including locale and first-day-of-week, without changing the
   sidebar or another embedded calendar.
+- A responsive year overview is available in both Calendar tabs and embedded
+  calendars, with locale-aware month grids, note markers, and daily/weekly
+  note actions.
 
 Some of these additions depend on Obsidian's Daily Notes or Periodic Notes
 plugins and their corresponding settings.

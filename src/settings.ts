@@ -6,7 +6,11 @@ import { DEFAULT_WEEK_FORMAT, DEFAULT_WORDS_PER_DOT } from "src/constants";
 
 import type CalendarPlugin from "./main";
 
+export type CalendarViewMode = "month" | "year";
+
 export interface ISettings {
+  /** The layout initially shown in a Calendar tab or embedded calendar. */
+  calendarView: CalendarViewMode;
   wordsPerDot: number;
   weekdayLabelFormat: string;
   weekStart: IWeekStartOption;
@@ -43,6 +47,7 @@ const weekdays = [
 ];
 
 export const defaultSettings = Object.freeze({
+  calendarView: "month" as CalendarViewMode,
   shouldConfirmBeforeCreate: true,
   weekStart: "locale" as IWeekStartOption,
 
@@ -108,6 +113,7 @@ export class CalendarSettingsTab extends PluginSettingTab {
       text: "General Settings",
     });
     this.addDotThresholdSetting();
+    this.addCalendarViewSetting();
     this.addWeekdayLabelFormatSetting();
     this.addWeekStartSetting();
     this.addConfirmCreateSetting();
@@ -149,6 +155,24 @@ export class CalendarSettingsTab extends PluginSettingTab {
         textfield.onChange(async (value) => {
           this.plugin.writeOptions(() => ({
             wordsPerDot: value !== "" ? Number(value) : undefined,
+          }));
+        });
+      });
+  }
+
+  addCalendarViewSetting(): void {
+    new Setting(this.containerEl)
+      .setName("Calendar view")
+      .setDesc(
+        "Choose whether Calendar opens as one month or a twelve-month year overview. Embedded calendars can override this in their code block."
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("month", "Month");
+        dropdown.addOption("year", "Year");
+        dropdown.setValue(this.plugin.options.calendarView);
+        dropdown.onChange(async (value) => {
+          await this.plugin.writeOptions(() => ({
+            calendarView: value as CalendarViewMode,
           }));
         });
       });

@@ -17,6 +17,7 @@ import type { ISettings } from "./settings";
 
 function settings(overrides: Partial<ISettings> = {}): ISettings {
   return {
+    calendarView: "month",
     wordsPerDot: 50,
     weekdayLabelFormat: "ddd",
     weekStart: "locale",
@@ -46,6 +47,7 @@ beforeEach(() => {
 describe("parseEmbedSettings", () => {
   it("accepts every calendar setting as a partial YAML override", () => {
     parseYamlResult = {
+      calendarView: "year",
       wordsPerDot: 12,
       weekdayLabelFormat: "dd",
       weekStart: "monday",
@@ -74,6 +76,7 @@ describe("parseEmbedSettings", () => {
   it("keeps valid settings while diagnosing invalid and unknown values", () => {
     parseYamlResult = {
       wordsPerDot: 25,
+      calendarView: "annual",
       showWeeklyNote: "yes",
       weekStart: "weekends",
       weeklyNoteFolder: 42,
@@ -83,6 +86,7 @@ describe("parseEmbedSettings", () => {
     expect(parseEmbedSettings("not important")).toEqual({
       overrides: { wordsPerDot: 25 },
       diagnostics: [
+        "Embed setting calendarView must be month or year.",
         "Embed setting showWeeklyNote must be true or false.",
         "Embed setting weekStart must be locale, sunday, monday, tuesday, wednesday, thursday, friday, or saturday.",
         "Embed setting weeklyNoteFolder must be a string.",
@@ -152,12 +156,13 @@ describe("mergeEmbedSettings", () => {
   it("returns an independent settings object with local overrides", () => {
     const globalSettings = settings({ showWeeklyNote: false, wordsPerDot: 50 });
     const merged = mergeEmbedSettings(globalSettings, {
+      calendarView: "year",
       showWeeklyNote: true,
       wordsPerDot: 10,
     });
 
     expect(merged).toEqual(
-      settings({ showWeeklyNote: true, wordsPerDot: 10 })
+      settings({ calendarView: "year", showWeeklyNote: true, wordsPerDot: 10 })
     );
     expect(merged).not.toBe(globalSettings);
     expect(globalSettings).toEqual(

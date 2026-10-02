@@ -1,6 +1,6 @@
 import { parseYaml } from "obsidian";
 
-import type { ISettings } from "./settings";
+import type { CalendarViewMode, ISettings } from "./settings";
 
 /** A validated subset of settings supplied by one `erin-calendar` code block. */
 export type EmbedSettingsOverrides = Partial<ISettings>;
@@ -66,7 +66,10 @@ const WEEK_START_OPTIONS = new Set<string>([
   "saturday",
 ]);
 
+const CALENDAR_VIEW_OPTIONS = new Set<CalendarViewMode>(["month", "year"]);
+
 const SETTING_KEYS = new Set<keyof ISettings>([
+  "calendarView",
   "wordsPerDot",
   "weekdayLabelFormat",
   "weekStart",
@@ -149,6 +152,18 @@ export function parseEmbedSettings(
         target[key] = value;
       } else {
         diagnostics.push("Embed setting wordsPerDot must be a finite number.");
+      }
+      continue;
+    }
+
+    if (key === "calendarView") {
+      if (
+        typeof value === "string" &&
+        CALENDAR_VIEW_OPTIONS.has(value as CalendarViewMode)
+      ) {
+        target[key] = value;
+      } else {
+        diagnostics.push("Embed setting calendarView must be month or year.");
       }
       continue;
     }

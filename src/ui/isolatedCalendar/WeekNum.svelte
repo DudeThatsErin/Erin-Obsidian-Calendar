@@ -21,6 +21,7 @@
   export let onClick: (date: Moment, isMetaPressed: boolean) => boolean;
   export let onContextMenu: (date: Moment, event: MouseEvent) => boolean;
   export let selectedId: string = null;
+  export let compact: boolean = false;
 
   let startOfWeek: Moment;
   $: startOfWeek = getCalendarWeekStart(days[0], weekStart);
@@ -35,6 +36,7 @@
     <div
       class={`week-num ${metadata.classes.join(" ")}`}
       class:active={selectedId === getCalendarWeekUID(days[0], weekStart)}
+      class:compact
       on:click={onClick &&
         ((event) => onClick(startOfWeek, isMetaPressed(event)))}
       on:contextmenu={onContextMenu && ((event) => onContextMenu(days[0], event))}
@@ -92,5 +94,15 @@
     justify-content: center;
     line-height: 6px;
     min-height: 6px;
+  }
+
+  .week-num.compact {
+    font-size: 0.55em;
+    padding: 2px 0;
+  }
+
+  .week-num.compact .dot-container {
+    line-height: 4px;
+    min-height: 4px;
   }
 </style>

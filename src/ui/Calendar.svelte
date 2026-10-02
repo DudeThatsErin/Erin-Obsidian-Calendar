@@ -10,7 +10,7 @@
   } from "../io/dailyNotesIndex";
   import type { DailyNoteEntry, DailyNotesIndex } from "../io/dailyNotesIndex";
   import type { WeeklyNotesIndex } from "../io/weeklyNotesIndex";
-  import type { ISettings } from "src/settings";
+  import type { CalendarViewMode, ISettings } from "src/settings";
   import {
     IsolatedCalendar,
     resolveCalendarLocale,
@@ -59,12 +59,18 @@
     () => false;
   export let onClickYear: (date: Moment, isMetaPressed: boolean) => boolean =
     () => false;
+  /** Tabs may persist a user-selected layout; embeds keep it local. */
+  export let onCalendarViewChange: (viewMode: CalendarViewMode) => void = () =>
+    undefined;
   export let onPointerLeave: () => void = () => undefined;
 
   let selectedDailyDate: Moment | null;
   let previousDailyNote: DailyNoteEntry | null;
   let nextDailyNote: DailyNoteEntry | null;
   let calendarKey: string;
+  let metadataKey: string;
+  let displayMode: CalendarViewMode = "month";
+  let appliedCalendarView: CalendarViewMode | null = null;
   const indexKeys = new WeakMap<object, number>();
   let nextIndexKey = 0;
 
@@ -87,6 +93,10 @@
   }
 
   $: tick($settingsStore);
+  $: if ($settingsStore.calendarView !== appliedCalendarView) {
+    displayMode = $settingsStore.calendarView;
+    appliedCalendarView = $settingsStore.calendarView;
+  }
   $: selectedDailyDate = $activeDailyDateStore;
   $: previousDailyNote = selectedDailyDate
     ? getAdjacentDailyNote(selectedDailyDate, $dailyNotesStore, "previous")
@@ -95,6 +105,7 @@
     ? getAdjacentDailyNote(selectedDailyDate, $dailyNotesStore, "next")
     : null;
   $: calendarKey = `${$settingsStore.localeOverride}:${$settingsStore.weekStart}:${$dateTagsStore.version}:${getIndexKey($dailyNotesStore)}:${getIndexKey($weeklyNotesStore)}`;
+  $: metadataKey = `${calendarKey}:${$settingsStore.wordsPerDot}`;
 
   function navigateToDailyNote(note: DailyNoteEntry | null): void {
     if (note) {
@@ -104,6 +115,11 @@
 
   function isNewTabEvent(event: MouseEvent | KeyboardEvent): boolean {
     return event.metaKey || event.ctrlKey;
+  }
+
+  function changeCalendarView(viewMode: CalendarViewMode): void {
+    displayMode = viewMode;
+    onCalendarViewChange(viewMode);
   }
 
   function setHeaderAction(
@@ -154,7 +170,7 @@
       ".erin-calendar-quarter"
     ) || null;
 
-    if ($settingsStore.showQuarterlyNote && title && year) {
+    if (displayMode === "month" && $settingsStore.showQuarterlyNote && title && year) {
       if (!quarter) {
         quarter = title.ownerDocument.createElement("span");
         quarter.className = "erin-calendar-quarter";
@@ -168,13 +184,13 @@
 
     setHeaderAction(
       month,
-      $settingsStore.showMonthlyNote,
+      displayMode === "month" && $settingsStore.showMonthlyNote,
       "Open monthly note",
       (event) => onClickMonth(displayedMonth.clone(), isNewTabEvent(event))
     );
     setHeaderAction(
       quarter,
-      $settingsStore.showQuarterlyNote,
+      displayMode === "month" && $settingsStore.showQuarterlyNote,
       "Open quarterly note",
       (event) => onClickQuarter(displayedMonth.clone(), isNewTabEvent(event))
     );
@@ -219,6 +235,9 @@
       {onClickDay}
       {onClickWeek}
       bind:displayedMonth
+      viewMode={displayMode}
+      onViewModeChange={changeCalendarView}
+      {metadataKey}
       localeOverride={$settingsStore.localeOverride}
       weekStart={$settingsStore.weekStart}
       weekdayLabelFormat={$settingsStore.weekdayLabelFormat}

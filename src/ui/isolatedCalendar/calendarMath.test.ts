@@ -1,8 +1,10 @@
 import moment from "moment";
+import type { Moment } from "moment";
 import "moment/locale/en-gb";
 
 import {
   getCalendarMonth,
+  getCalendarYearMonths,
   getCalendarWeekNumber,
   getCalendarWeekStart,
 } from "./calendarMath";
@@ -28,6 +30,43 @@ describe("isolated calendar date math", () => {
 
     expect(sunday[0].days[0].format("YYYY-MM-DD")).toBe("2019-12-29");
     expect(monday[0].days[0].format("YYYY-MM-DD")).toBe("2019-12-30");
+    expect(moment.locale()).toBe(before);
+  });
+
+  it("builds all twelve localized month grids for a year without leaking locale state", () => {
+    const before = moment.locale();
+    const locale = "en-gb";
+    const localeData = moment.localeData(locale);
+    const year = getCalendarYearMonths(
+      moment("2024-06-15", "YYYY-MM-DD", true),
+      locale,
+      1,
+      localeData.firstDayOfYear()
+    );
+
+    expect(year).toHaveLength(12);
+    expect(year.map((month) => month.month.format("YYYY-MM"))).toEqual([
+      "2024-01",
+      "2024-02",
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+      "2024-07",
+      "2024-08",
+      "2024-09",
+      "2024-10",
+      "2024-11",
+      "2024-12",
+    ]);
+    expect(
+      year[1].weeks
+        .reduce<Moment[]>((days, week) => days.concat(week.days), [])
+        .some((date) => date.isSame("2024-02-29", "day"))
+    ).toBe(true);
+    expect(year[0].weeks[0].days[0].format("YYYY-MM-DD")).toBe(
+      "2024-01-01"
+    );
     expect(moment.locale()).toBe(before);
   });
 

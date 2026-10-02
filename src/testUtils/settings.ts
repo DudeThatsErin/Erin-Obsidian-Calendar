@@ -6,6 +6,7 @@ export function getDefaultSettings(
   return Object.assign(
     {},
     {
+      calendarView: "month",
       weekStart: "sunday",
       shouldConfirmBeforeCreate: false,
       wordsPerDot: 50,

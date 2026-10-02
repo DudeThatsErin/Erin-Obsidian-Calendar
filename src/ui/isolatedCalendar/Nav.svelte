@@ -1,23 +1,30 @@
 <script lang="ts">
   import type { Moment } from "moment";
 
+  import type { CalendarViewMode } from "../../settings";
   import Arrow from "./Arrow.svelte";
   import { withCalendarLocale } from "./locale";
 
   export let displayedMonth: Moment;
   export let today: Moment;
   export let locale: string;
+  export let viewMode: CalendarViewMode = "month";
 
   export let resetDisplayedMonth: () => void;
   export let incrementDisplayedMonth: () => void;
   export let decrementDisplayedMonth: () => void;
+  export let onToggleView: () => void;
 
   let localizedToday: Moment;
   let localizedDisplayedMonth: Moment;
   let todayDisplayText: string;
+  let navigationUnit: string;
+  let alternateView: string;
   $: localizedToday = withCalendarLocale(today, locale);
   $: localizedDisplayedMonth = withCalendarLocale(displayedMonth, locale);
   $: todayDisplayText = localizedToday.calendar().split(/\d|\s/)[0];
+  $: navigationUnit = viewMode === "year" ? "year" : "month";
+  $: alternateView = viewMode === "year" ? "Month" : "Year";
 
   let isMobile = Boolean(
     (window.app as unknown as { isMobile?: boolean }).isMobile
@@ -40,15 +47,18 @@
     on:keydown={resetOnKeyboard}
     role="button"
     tabindex="0"
+    aria-label={`Show current ${navigationUnit}`}
   >
-    <span class="month">{localizedDisplayedMonth.format("MMM")}</span>
+    {#if viewMode === "month"}
+      <span class="month">{localizedDisplayedMonth.format("MMM")}</span>
+    {/if}
     <span class="year">{localizedDisplayedMonth.format("YYYY")}</span>
   </h3>
   <div class="right-nav">
     <Arrow
       direction="left"
       onClick={decrementDisplayedMonth}
-      tooltip="Previous month"
+      tooltip={`Previous ${navigationUnit}`}
     />
     <button class="reset-button" on:click={resetDisplayedMonth} type="button">
       {todayDisplayText}
@@ -56,8 +66,17 @@
     <Arrow
       direction="right"
       onClick={incrementDisplayedMonth}
-      tooltip="Next month"
+      tooltip={`Next ${navigationUnit}`}
     />
+    <button
+      class="view-toggle"
+      aria-label={`Switch to ${alternateView.toLowerCase()} view`}
+      aria-pressed={viewMode === "year"}
+      on:click={onToggleView}
+      type="button"
+    >
+      {alternateView}
+    </button>
   </div>
 </div>
 
@@ -112,6 +131,29 @@
     margin: 0 4px;
     padding: 0 4px;
     text-transform: uppercase;
+  }
+
+  .view-toggle {
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.7em;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    margin-left: 0.4em;
+    padding: 0.1em 0.45em;
+    text-transform: uppercase;
+  }
+
+  .view-toggle:hover {
+    background: var(--interactive-hover);
+  }
+
+  .view-toggle:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
   }
 
   .is-mobile .reset-button {

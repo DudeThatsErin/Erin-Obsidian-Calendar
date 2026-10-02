@@ -97,7 +97,7 @@ export default class CalendarPlugin extends Plugin {
     const existingLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR)[0];
     if (existingLeaf) return existingLeaf.view as CalendarView;
     const mode = (this.app.vault as unknown as { getConfig: (key: string) => string }).getConfig("defaultViewMode");
-    const leaf = this.app.workspace.getRightLeaf(false);
+    const leaf = this.app.workspace.getRightLeaf(true);
     await leaf.setViewState({
       type: VIEW_TYPE_CALENDAR,
       state: { mode },

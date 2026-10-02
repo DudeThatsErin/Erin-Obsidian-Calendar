@@ -1972,7 +1972,7 @@ class CalendarPlugin extends require$$0.Plugin {
         if (existingLeaf)
             return existingLeaf.view;
         const mode = this.app.vault.getConfig("defaultViewMode");
-        const leaf = this.app.workspace.getRightLeaf(false);
+        const leaf = this.app.workspace.getRightLeaf(true);
         await leaf.setViewState({
             type: VIEW_TYPE_CALENDAR,
             state: { mode },

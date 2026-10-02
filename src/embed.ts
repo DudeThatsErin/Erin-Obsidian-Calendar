@@ -22,14 +22,27 @@ export class CalendarEmbed extends MarkdownRenderChild {
     this.calendar = new Calendar({
       target: this.containerEl,
       props: {
-        onClickDay: async (date, inNewSplit) =>
-          (await this.plugin.getOrCreateCalendarView()).openOrCreateDailyNote(date, inNewSplit),
-        onClickWeek: async (date, inNewSplit) =>
-          (await this.plugin.getOrCreateCalendarView()).openOrCreateWeeklyNote(date, inNewSplit),
-        onHoverDay: () => undefined,
-        onHoverWeek: () => undefined,
-        onContextMenuDay: () => undefined,
-        onContextMenuWeek: () => undefined,
+        onClickDay: (date, inNewSplit) => {
+          void this.plugin
+            .getOrCreateCalendarView()
+            .then((view) => view.openOrCreateDailyNote(date, inNewSplit));
+          return true;
+        },
+        onClickWeek: (date, inNewSplit) => {
+          void this.plugin
+            .getOrCreateCalendarView()
+            .then((view) => view.openOrCreateWeeklyNote(date, inNewSplit));
+          return true;
+        },
+        onHoverDay: () => true,
+        onHoverWeek: () => true,
+        onContextMenuDay: () => true,
+        onContextMenuWeek: () => true,
+        onNavigateDailyNote: (date) => {
+          void this.plugin
+            .getOrCreateCalendarView()
+            .then((view) => view.openOrCreateDailyNote(date, false));
+        },
         sources: [customTagsSource, streakSource, wordCountSource, tasksSource],
       },
     });

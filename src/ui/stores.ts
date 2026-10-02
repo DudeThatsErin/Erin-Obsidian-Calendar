@@ -1,13 +1,11 @@
 import type { TFile } from "obsidian";
-import {
-  getAllDailyNotes,
-  getAllWeeklyNotes,
-} from "obsidian-daily-notes-interface";
+import { getAllWeeklyNotes } from "obsidian-daily-notes-interface";
 import { writable } from "svelte/store";
 
 import { defaultSettings, ISettings } from "src/settings";
 
 import { getDateUIDFromFile } from "./utils";
+import { getAllDailyNotesByPath } from "../io/dailyNotesIndex";
 
 function createDailyNotesStore() {
   let hasError = false;
@@ -15,7 +13,7 @@ function createDailyNotesStore() {
   return {
     reindex: () => {
       try {
-        const dailyNotes = getAllDailyNotes();
+        const dailyNotes = getAllDailyNotesByPath();
         store.set(dailyNotes);
         hasError = false;
       } catch (err) {

@@ -28,7 +28,9 @@ The embedded calendar uses the same settings as the sidebar calendar.
 ## Features
 
 - Navigate to existing daily notes from a calendar view.
+- Move directly to the previous or next existing daily note, skipping empty days.
 - Create missing daily notes using Obsidian's configured Daily Notes settings.
+- Honor Daily Notes folder/date formats, including nested paths such as `YYYY/MM/DD`.
 - Display writing-progress dots based on note word count.
 - Optionally show week numbers and open weekly notes.
 

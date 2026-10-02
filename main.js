@@ -145,7 +145,7 @@ function requireMain () {
 	        if (granularity === "week") {
 	            const cleanFormat = removeEscapedCharacters(format);
 	            if (/w{1,2}/i.test(cleanFormat)) {
-	                return window.moment(file.basename,
+	                return window.moment(file.basename, 
 	                // If format contains week, remove day & month formatting
 	                format.replace(/M{1,4}/g, "").replace(/D{1,4}/g, ""), false);
 	            }
@@ -533,14 +533,57 @@ function get_store_value(store) {
 function component_subscribe(component, store, callback) {
     component.$$.on_destroy.push(subscribe(store, callback));
 }
+function append$1(target, node) {
+    target.appendChild(node);
+}
+function append_styles(target, style_sheet_id, styles) {
+    const append_styles_to = get_root_for_style(target);
+    if (!append_styles_to.getElementById(style_sheet_id)) {
+        const style = element$1('style');
+        style.id = style_sheet_id;
+        style.textContent = styles;
+        append_stylesheet(append_styles_to, style);
+    }
+}
+function get_root_for_style(node) {
+    if (!node)
+        return document;
+    const root = node.getRootNode ? node.getRootNode() : node.ownerDocument;
+    if (root && root.host) {
+        return root;
+    }
+    return node.ownerDocument;
+}
+function append_stylesheet(node, style) {
+    append$1(node.head || node, style);
+    return style.sheet;
+}
 function insert$1(target, node, anchor) {
     target.insertBefore(node, anchor || null);
 }
 function detach$1(node) {
-    node.parentNode.removeChild(node);
+    if (node.parentNode) {
+        node.parentNode.removeChild(node);
+    }
 }
 function element$1(name) {
     return document.createElement(name);
+}
+function text$1(data) {
+    return document.createTextNode(data);
+}
+function space$1() {
+    return text$1(' ');
+}
+function listen$1(node, event, handler, options) {
+    node.addEventListener(event, handler, options);
+    return () => node.removeEventListener(event, handler, options);
+}
+function attr$1(node, attribute, value) {
+    if (value == null)
+        node.removeAttribute(attribute);
+    else if (node.getAttribute(attribute) !== value)
+        node.setAttribute(attribute, value);
 }
 function children$1(element) {
     return Array.from(element.childNodes);
@@ -555,18 +598,31 @@ function get_current_component$1() {
         throw new Error('Function called outside component initialization');
     return current_component$1;
 }
+/**
+ * Schedules a callback to run immediately after the component has been updated.
+ *
+ * The first time the callback runs will be after the initial `onMount`
+ */
 function afterUpdate(fn) {
     get_current_component$1().$$.after_update.push(fn);
 }
+/**
+ * Schedules a callback to run immediately before the component is unmounted.
+ *
+ * Out of `onMount`, `beforeUpdate`, `afterUpdate` and `onDestroy`, this is the
+ * only one that runs inside a server-side component.
+ *
+ * https://svelte.dev/docs#run-time-svelte-ondestroy
+ */
 function onDestroy(fn) {
     get_current_component$1().$$.on_destroy.push(fn);
 }
 
 const dirty_components$1 = [];
 const binding_callbacks$1 = [];
-const render_callbacks$1 = [];
+let render_callbacks$1 = [];
 const flush_callbacks$1 = [];
-const resolved_promise$1 = Promise.resolve();
+const resolved_promise$1 = /* @__PURE__ */ Promise.resolve();
 let update_scheduled$1 = false;
 function schedule_update$1() {
     if (!update_scheduled$1) {
@@ -580,22 +636,54 @@ function add_render_callback$1(fn) {
 function add_flush_callback(fn) {
     flush_callbacks$1.push(fn);
 }
-let flushing$1 = false;
+// flush() calls callbacks in this order:
+// 1. All beforeUpdate callbacks, in order: parents before children
+// 2. All bind:this callbacks, in reverse order: children before parents.
+// 3. All afterUpdate callbacks, in order: parents before children. EXCEPT
+//    for afterUpdates called during the initial onMount, which are called in
+//    reverse order: children before parents.
+// Since callbacks might update component values, which could trigger another
+// call to flush(), the following steps guard against this:
+// 1. During beforeUpdate, any updated components will be added to the
+//    dirty_components array and will cause a reentrant call to flush(). Because
+//    the flush index is kept outside the function, the reentrant call will pick
+//    up where the earlier call left off and go through all dirty components. The
+//    current_component value is saved and restored so that the reentrant call will
+//    not interfere with the "parent" flush() call.
+// 2. bind:this callbacks cannot trigger new flush() calls.
+// 3. During afterUpdate, any updated components will NOT have their afterUpdate
+//    callback called a second time; the seen_callbacks set, outside the flush()
+//    function, guarantees this behavior.
 const seen_callbacks$1 = new Set();
+let flushidx = 0; // Do *not* move this inside the flush() function
 function flush$1() {
-    if (flushing$1)
+    // Do not reenter flush while dirty components are updated, as this can
+    // result in an infinite loop. Instead, let the inner flush handle it.
+    // Reentrancy is ok afterwards for bindings etc.
+    if (flushidx !== 0) {
         return;
-    flushing$1 = true;
+    }
+    const saved_component = current_component$1;
     do {
         // first, call beforeUpdate functions
         // and update components
-        for (let i = 0; i < dirty_components$1.length; i += 1) {
-            const component = dirty_components$1[i];
-            set_current_component$1(component);
-            update$1(component.$$);
+        try {
+            while (flushidx < dirty_components$1.length) {
+                const component = dirty_components$1[flushidx];
+                flushidx++;
+                set_current_component$1(component);
+                update$1(component.$$);
+            }
+        }
+        catch (e) {
+            // reset dirty state to not end up in a deadlocked state and then rethrow
+            dirty_components$1.length = 0;
+            flushidx = 0;
+            throw e;
         }
         set_current_component$1(null);
         dirty_components$1.length = 0;
+        flushidx = 0;
         while (binding_callbacks$1.length)
             binding_callbacks$1.pop()();
         // then, once components are updated, call
@@ -615,8 +703,8 @@ function flush$1() {
         flush_callbacks$1.pop()();
     }
     update_scheduled$1 = false;
-    flushing$1 = false;
     seen_callbacks$1.clear();
+    set_current_component$1(saved_component);
 }
 function update$1($$) {
     if ($$.fragment !== null) {
@@ -627,6 +715,16 @@ function update$1($$) {
         $$.fragment && $$.fragment.p($$.ctx, dirty);
         $$.after_update.forEach(add_render_callback$1);
     }
+}
+/**
+ * Useful for example to execute remaining `afterUpdate` callbacks before executing `destroy`.
+ */
+function flush_render_callbacks(fns) {
+    const filtered = [];
+    const targets = [];
+    render_callbacks$1.forEach((c) => fns.indexOf(c) === -1 ? filtered.push(c) : targets.push(c));
+    targets.forEach((c) => c());
+    render_callbacks$1 = filtered;
 }
 const outroing$1 = new Set();
 let outros$1;
@@ -659,14 +757,17 @@ function create_component$1(block) {
     block && block.c();
 }
 function mount_component$1(component, target, anchor, customElement) {
-    const { fragment, on_mount, on_destroy, after_update } = component.$$;
+    const { fragment, after_update } = component.$$;
     fragment && fragment.m(target, anchor);
     if (!customElement) {
         // onMount happens before the initial afterUpdate
         add_render_callback$1(() => {
-            const new_on_destroy = on_mount.map(run$1).filter(is_function$1);
-            if (on_destroy) {
-                on_destroy.push(...new_on_destroy);
+            const new_on_destroy = component.$$.on_mount.map(run$1).filter(is_function$1);
+            // if the component was destroyed immediately
+            // it will update the `$$.on_destroy` reference to `null`.
+            // the destructured on_destroy may still reference to the old array
+            if (component.$$.on_destroy) {
+                component.$$.on_destroy.push(...new_on_destroy);
             }
             else {
                 // Edge case - component was destroyed immediately,
@@ -681,6 +782,7 @@ function mount_component$1(component, target, anchor, customElement) {
 function destroy_component$1(component, detaching) {
     const $$ = component.$$;
     if ($$.fragment !== null) {
+        flush_render_callbacks($$.after_update);
         run_all$1($$.on_destroy);
         $$.fragment && $$.fragment.d(detaching);
         // TODO null out other refs, including component.$$ (but need to
@@ -697,12 +799,12 @@ function make_dirty$1(component, i) {
     }
     component.$$.dirty[(i / 31) | 0] |= (1 << (i % 31));
 }
-function init$1(component, options, instance, create_fragment, not_equal, props, dirty = [-1]) {
+function init$1(component, options, instance, create_fragment, not_equal, props, append_styles, dirty = [-1]) {
     const parent_component = current_component$1;
     set_current_component$1(component);
     const $$ = component.$$ = {
         fragment: null,
-        ctx: null,
+        ctx: [],
         // state
         props,
         update: noop$1,
@@ -714,12 +816,14 @@ function init$1(component, options, instance, create_fragment, not_equal, props,
         on_disconnect: [],
         before_update: [],
         after_update: [],
-        context: new Map(parent_component ? parent_component.$$.context : []),
+        context: new Map(options.context || (parent_component ? parent_component.$$.context : [])),
         // everything else
         callbacks: blank_object$1(),
         dirty,
-        skip_bound: false
+        skip_bound: false,
+        root: options.target || parent_component.$$.root
     };
+    append_styles && append_styles($$.root);
     let ready = false;
     $$.ctx = instance
         ? instance(component, options.props || {}, (i, ret, ...rest) => {
@@ -765,6 +869,9 @@ let SvelteComponent$1 = class SvelteComponent {
         this.$destroy = noop$1;
     }
     $on(type, callback) {
+        if (!is_function$1(callback)) {
+            return noop$1;
+        }
         const callbacks = (this.$$.callbacks[type] || (this.$$.callbacks[type] = []));
         callbacks.push(callback);
         return () => {
@@ -786,20 +893,19 @@ const subscriber_queue = [];
 /**
  * Create a `Writable` store that allows both updating and reading by subscription.
  * @param {*=}value initial value
- * @param {StartStopNotifier=}start start and stop notifications for subscriptions
+ * @param {StartStopNotifier=} start
  */
 function writable(value, start = noop$1) {
     let stop;
-    const subscribers = [];
+    const subscribers = new Set();
     function set(new_value) {
         if (safe_not_equal$1(value, new_value)) {
             value = new_value;
             if (stop) { // store is ready
                 const run_queue = !subscriber_queue.length;
-                for (let i = 0; i < subscribers.length; i += 1) {
-                    const s = subscribers[i];
-                    s[1]();
-                    subscriber_queue.push(s, value);
+                for (const subscriber of subscribers) {
+                    subscriber[1]();
+                    subscriber_queue.push(subscriber, value);
                 }
                 if (run_queue) {
                     for (let i = 0; i < subscriber_queue.length; i += 2) {
@@ -815,17 +921,14 @@ function writable(value, start = noop$1) {
     }
     function subscribe(run, invalidate = noop$1) {
         const subscriber = [run, invalidate];
-        subscribers.push(subscriber);
-        if (subscribers.length === 1) {
+        subscribers.add(subscriber);
+        if (subscribers.size === 1) {
             stop = start(set) || noop$1;
         }
         run(value);
         return () => {
-            const index = subscribers.indexOf(subscriber);
-            if (index !== -1) {
-                subscribers.splice(index, 1);
-            }
-            if (subscribers.length === 0) {
+            subscribers.delete(subscriber);
+            if (subscribers.size === 0 && stop) {
                 stop();
                 stop = null;
             }
@@ -1036,6 +1139,51 @@ class CalendarSettingsTab extends require$$0.PluginSettingTab {
     }
 }
 
+function getDateFromDailyNoteFile(file) {
+    const settings = mainExports.getDailyNoteSettings() || {};
+    const folder = settings.folder || "";
+    const format = settings.format || mainExports.DEFAULT_DAILY_NOTE_FORMAT;
+    const normalizedFolder = require$$0.normalizePath(folder)
+        .replace(/^\/+|\/+$/g, "")
+        .replace(/^\.$/, "");
+    const prefix = normalizedFolder ? `${normalizedFolder}/` : "";
+    if (prefix && !file.path.startsWith(prefix))
+        return null;
+    const relativePath = file.path.slice(prefix.length).replace(/\.md$/i, "");
+    const date = window.moment(relativePath, format, true);
+    return date.isValid() ? date : null;
+}
+function getAllDailyNotesByPath() {
+    const notes = {};
+    window.app.vault.getMarkdownFiles().forEach((file) => {
+        const date = getDateFromDailyNoteFile(file);
+        if (date)
+            notes[mainExports.getDateUID(date, "day")] = file;
+    });
+    return notes;
+}
+function getDailyNoteEntries(notes) {
+    return Object.values(notes)
+        .map((file) => {
+        const date = getDateFromDailyNoteFile(file);
+        return date ? { date, file } : null;
+    })
+        .filter((entry) => entry !== null)
+        .sort((left, right) => left.date.valueOf() - right.date.valueOf());
+}
+function getAdjacentDailyNote(date, notes, direction) {
+    const entries = getDailyNoteEntries(notes);
+    if (direction === "previous") {
+        for (let index = entries.length - 1; index >= 0; index -= 1) {
+            if (entries[index].date.isBefore(date, "day")) {
+                return entries[index];
+            }
+        }
+        return null;
+    }
+    return entries.find((entry) => entry.date.isAfter(date, "day")) || null;
+}
+
 const classList = (obj) => {
     return Object.entries(obj)
         .filter(([_k, v]) => !!v)
@@ -1058,8 +1206,8 @@ function partition(arr, predicate) {
     return [pass, fail];
 }
 /**
- * Lookup the dateUID for a given file. It compares the filename
- * to the daily and weekly note formats to find a match.
+ * Lookup the dateUID for a given file. It compares the file path to the
+ * configured daily note path/format and the filename to the weekly format.
  *
  * @param file
  */
@@ -1067,8 +1215,7 @@ function getDateUIDFromFile(file) {
     if (!file) {
         return null;
     }
-    // TODO: I'm not checking the path!
-    let date = mainExports.getDateFromFile(file, "day");
+    let date = getDateFromDailyNoteFile(file);
     if (date) {
         return mainExports.getDateUID(date, "day");
     }
@@ -1095,7 +1242,7 @@ function createDailyNotesStore() {
     const store = writable(null);
     return Object.assign({ reindex: () => {
             try {
-                const dailyNotes = mainExports.getAllDailyNotes();
+                const dailyNotes = getAllDailyNotesByPath();
                 store.set(dailyNotes);
                 hasError = false;
             }
@@ -1166,6 +1313,100 @@ function createConfirmationDialog({ cta, onAccept, text, title, }) {
     new ConfirmationModal(window.app, { cta, onAccept, text, title }).open();
 }
 
+const templateDateUnits = {
+    y: "y",
+    q: "Q",
+    m: "m",
+    w: "w",
+    d: "d",
+    h: "h",
+    s: "s",
+};
+function joinPaths(...partSegments) {
+    let parts = [];
+    partSegments.forEach((part) => {
+        parts = parts.concat(part.split("/"));
+    });
+    const normalizedParts = [];
+    parts.forEach((part) => {
+        if (part && part !== ".") {
+            normalizedParts.push(part);
+        }
+    });
+    if (parts[0] === "") {
+        normalizedParts.unshift("");
+    }
+    return normalizedParts.join("/");
+}
+async function getNotePath(directory, filename) {
+    const markdownFilename = filename.endsWith(".md")
+        ? filename
+        : `${filename}.md`;
+    const path = require$$0.normalizePath(joinPaths(directory, markdownFilename));
+    const folder = path.replace(/\\/g, "/").split("/").slice(0, -1);
+    if (folder.length) {
+        const folderPath = joinPaths(...folder);
+        if (!window.app.vault.getAbstractFileByPath(folderPath)) {
+            await window.app.vault.createFolder(folderPath);
+        }
+    }
+    return path;
+}
+/**
+ * Expand Daily Notes template tokens for a note created from Calendar.
+ *
+ * The core Daily Notes command uses the current date for a bare {{date}}
+ * token. Preserve that behavior here while keeping the selected calendar date
+ * for the filename, title, and date-aware tokens.
+ */
+function expandDailyNoteTemplate(templateContents, date, format, now = window.moment()) {
+    const filename = date.format(format);
+    return templateContents
+        .replace(/{{\s*date\s*}}/gi, now.format(format))
+        .replace(/{{\s*time\s*}}/gi, now.format("HH:mm"))
+        .replace(/{{\s*title\s*}}/gi, filename)
+        .replace(/{{\s*(date|time)\s*(([+-]\d+)([yqmwdhs]))?\s*(:.+?)?}}/gi, (_match, _timeOrDate, calc, timeDelta, unit, momentFormat) => {
+        const targetDate = date.clone().set({
+            hour: now.get("hour"),
+            minute: now.get("minute"),
+            second: now.get("second"),
+        });
+        if (calc) {
+            targetDate.add(parseInt(timeDelta, 10), templateDateUnits[unit]);
+        }
+        if (momentFormat) {
+            return targetDate.format(momentFormat.substring(1).trim());
+        }
+        return targetDate.format(format);
+    })
+        .replace(/{{\s*yesterday\s*}}/gi, date.clone().subtract(1, "day").format(format))
+        .replace(/{{\s*tomorrow\s*}}/gi, date.clone().add(1, "day").format(format));
+}
+/**
+ * Create a daily note using the configured Daily Notes settings.
+ *
+ * This mirrors the interface package's creator except for bare {{date}},
+ * which intentionally resolves to the date on which the note is created.
+ */
+async function createCalendarDailyNote(date) {
+    const app = window.app;
+    const { vault } = app;
+    const { template, format, folder } = mainExports.getDailyNoteSettings();
+    const filename = date.format(format);
+    const [templateContents, foldInfo] = await mainExports.getTemplateInfo(template);
+    const path = await getNotePath(folder, filename);
+    try {
+        const createdFile = await vault.create(path, expandDailyNoteTemplate(templateContents, date, format));
+        const foldManager = app.foldManager;
+        foldManager === null || foldManager === void 0 ? void 0 : foldManager.save(createdFile, foldInfo);
+        return createdFile;
+    }
+    catch (err) {
+        console.error(`Failed to create file: '${path}'`, err);
+        new require$$0.Notice("Unable to create new file.");
+        return null;
+    }
+}
 /**
  * Create a Daily Note for a given date.
  */
@@ -1174,7 +1415,10 @@ async function tryToCreateDailyNote(date, inNewSplit, settings, cb) {
     const { format } = mainExports.getDailyNoteSettings();
     const filename = date.format(format);
     const createFile = async () => {
-        const dailyNote = await mainExports.createDailyNote(date);
+        const dailyNote = await createCalendarDailyNote(date);
+        if (!dailyNote) {
+            return;
+        }
         const leaf = inNewSplit
             ? workspace.splitActiveLeaf()
             : workspace.getUnpinnedLeaf();
@@ -2192,7 +2436,7 @@ function create_fragment$5(ctx) {
 
 function instance$5($$self, $$props, $$invalidate) {
 	let { $$slots: slots = {}, $$scope } = $$props;
-
+	
 	let { metadata } = $$props;
 
 	$$self.$$set = $$props => {
@@ -2513,8 +2757,8 @@ function create_fragment$4(ctx) {
 }
 
 function instance$4($$self, $$props, $$invalidate) {
-
-
+	
+	
 	let { date } = $$props;
 	let { metadata } = $$props;
 	let { onHover } = $$props;
@@ -2797,7 +3041,7 @@ function create_fragment$2(ctx) {
 }
 
 function instance$2($$self, $$props, $$invalidate) {
-
+	
 	let { displayedMonth } = $$props;
 	let { today } = $$props;
 	let { resetDisplayedMonth } = $$props;
@@ -3089,8 +3333,8 @@ function create_fragment$1(ctx) {
 }
 
 function instance$1($$self, $$props, $$invalidate) {
-
-
+	
+	
 	let { weekNum } = $$props;
 	let { days } = $$props;
 	let { metadata } = $$props;
@@ -3173,7 +3417,7 @@ function getWeeklyMetadata(sources, date, ..._args) {
 
 /* src/components/Calendar.svelte generated by Svelte v3.35.0 */
 
-function add_css() {
+function add_css$6() {
 	var style = element("style");
 	style.id = "svelte-pcimu8-style";
 	style.textContent = ".container.svelte-pcimu8{--color-background-heading:transparent;--color-background-day:transparent;--color-background-weeknum:transparent;--color-background-weekend:transparent;--color-dot:var(--text-muted);--color-arrow:var(--text-muted);--color-button:var(--text-muted);--color-text-title:var(--text-normal);--color-text-heading:var(--text-muted);--color-text-day:var(--text-normal);--color-text-today:var(--interactive-accent);--color-text-weeknum:var(--text-muted)}.container.svelte-pcimu8{padding:0 8px}.container.is-mobile.svelte-pcimu8{padding:0}th.svelte-pcimu8{text-align:center}.weekend.svelte-pcimu8{background-color:var(--color-background-weekend)}.calendar.svelte-pcimu8{border-collapse:collapse;width:100%}th.svelte-pcimu8{background-color:var(--color-background-heading);color:var(--color-text-heading);font-size:0.6em;letter-spacing:1px;padding:4px;text-transform:uppercase}";
@@ -3761,8 +4005,8 @@ function create_fragment$7(ctx) {
 }
 
 function instance$7($$self, $$props, $$invalidate) {
-
-
+	
+	
 	let { localeData } = $$props;
 	let { showWeekNums = false } = $$props;
 	let { onHoverDay } = $$props;
@@ -3843,7 +4087,7 @@ function instance$7($$self, $$props, $$invalidate) {
 let Calendar$1 = class Calendar extends SvelteComponent {
 	constructor(options) {
 		super();
-		if (!document.getElementById("svelte-pcimu8-style")) add_css();
+		if (!document.getElementById("svelte-pcimu8-style")) add_css$6();
 
 		init(this, options, instance$7, create_fragment$7, not_equal, {
 			localeData: 17,
@@ -3956,29 +4200,44 @@ function configureGlobalMomentLocale(localeOverride = "system-default", weekStar
     return currentLocale;
 }
 
-/* src/ui/Calendar.svelte generated by Svelte v3.35.0 */
+/* src/ui/Calendar.svelte generated by Svelte v3.59.2 */
+
+function add_css(target) {
+	append_styles(target, "svelte-190b14s", ".existing-note-navigation.svelte-190b14s.svelte-190b14s{display:flex;gap:0.5em;justify-content:center;margin-top:0.5em}.existing-note-navigation.svelte-190b14s button.svelte-190b14s{color:var(--text-muted);font-size:0.7em;text-transform:uppercase}");
+}
 
 function create_fragment(ctx) {
-	let div;
+	let div1;
 	let calendarbase;
 	let updating_displayedMonth;
+	let t0;
+	let div0;
+	let button0;
+	let t1;
+	let button0_disabled_value;
+	let t2;
+	let button1;
+	let t3;
+	let button1_disabled_value;
 	let current;
+	let mounted;
+	let dispose;
 
 	function calendarbase_displayedMonth_binding(value) {
-		/*calendarbase_displayedMonth_binding*/ ctx[13](value);
+		/*calendarbase_displayedMonth_binding*/ ctx[19](value);
 	}
 
 	let calendarbase_props = {
 		sources: /*sources*/ ctx[1],
-		today: /*today*/ ctx[9],
+		today: /*today*/ ctx[10],
 		onHoverDay: /*onHoverDay*/ ctx[2],
 		onHoverWeek: /*onHoverWeek*/ ctx[3],
 		onContextMenuDay: /*onContextMenuDay*/ ctx[6],
 		onContextMenuWeek: /*onContextMenuWeek*/ ctx[7],
 		onClickDay: /*onClickDay*/ ctx[4],
 		onClickWeek: /*onClickWeek*/ ctx[5],
-		localeData: /*today*/ ctx[9].localeData(),
-		selectedId: /*$activeFile*/ ctx[11],
+		localeData: /*today*/ ctx[10].localeData(),
+		selectedId: /*$activeFile*/ ctx[9],
 		showWeekNums: /*$settings*/ ctx[8].showWeeklyNote
 	};
 
@@ -3987,31 +4246,64 @@ function create_fragment(ctx) {
 	}
 
 	calendarbase = new Calendar$1({ props: calendarbase_props });
-	binding_callbacks$1.push(() => bind(calendarbase, "displayedMonth", calendarbase_displayedMonth_binding));
+	binding_callbacks$1.push(() => bind(calendarbase, 'displayedMonth', calendarbase_displayedMonth_binding));
 
 	return {
 		c() {
-			div = element$1("div");
+			div1 = element$1("div");
 			create_component$1(calendarbase.$$.fragment);
+			t0 = space$1();
+			div0 = element$1("div");
+			button0 = element$1("button");
+			t1 = text$1("Prev");
+			t2 = space$1();
+			button1 = element$1("button");
+			t3 = text$1("Next");
+			attr$1(button0, "aria-label", "Open previous existing daily note");
+			button0.disabled = button0_disabled_value = !/*previousDailyNote*/ ctx[12];
+			attr$1(button0, "type", "button");
+			attr$1(button0, "class", "svelte-190b14s");
+			attr$1(button1, "aria-label", "Open next existing daily note");
+			button1.disabled = button1_disabled_value = !/*nextDailyNote*/ ctx[13];
+			attr$1(button1, "type", "button");
+			attr$1(button1, "class", "svelte-190b14s");
+			attr$1(div0, "class", "existing-note-navigation svelte-190b14s");
+			attr$1(div0, "aria-label", "Daily note navigation");
 		},
 		m(target, anchor) {
-			insert$1(target, div, anchor);
-			mount_component$1(calendarbase, div, null);
-			/*div_binding*/ ctx[14](div);
+			insert$1(target, div1, anchor);
+			mount_component$1(calendarbase, div1, null);
+			append$1(div1, t0);
+			append$1(div1, div0);
+			append$1(div0, button0);
+			append$1(button0, t1);
+			append$1(div0, t2);
+			append$1(div0, button1);
+			append$1(button1, t3);
+			/*div1_binding*/ ctx[22](div1);
 			current = true;
+
+			if (!mounted) {
+				dispose = [
+					listen$1(button0, "click", /*click_handler*/ ctx[20]),
+					listen$1(button1, "click", /*click_handler_1*/ ctx[21])
+				];
+
+				mounted = true;
+			}
 		},
 		p(ctx, [dirty]) {
 			const calendarbase_changes = {};
 			if (dirty & /*sources*/ 2) calendarbase_changes.sources = /*sources*/ ctx[1];
-			if (dirty & /*today*/ 512) calendarbase_changes.today = /*today*/ ctx[9];
+			if (dirty & /*today*/ 1024) calendarbase_changes.today = /*today*/ ctx[10];
 			if (dirty & /*onHoverDay*/ 4) calendarbase_changes.onHoverDay = /*onHoverDay*/ ctx[2];
 			if (dirty & /*onHoverWeek*/ 8) calendarbase_changes.onHoverWeek = /*onHoverWeek*/ ctx[3];
 			if (dirty & /*onContextMenuDay*/ 64) calendarbase_changes.onContextMenuDay = /*onContextMenuDay*/ ctx[6];
 			if (dirty & /*onContextMenuWeek*/ 128) calendarbase_changes.onContextMenuWeek = /*onContextMenuWeek*/ ctx[7];
 			if (dirty & /*onClickDay*/ 16) calendarbase_changes.onClickDay = /*onClickDay*/ ctx[4];
 			if (dirty & /*onClickWeek*/ 32) calendarbase_changes.onClickWeek = /*onClickWeek*/ ctx[5];
-			if (dirty & /*today*/ 512) calendarbase_changes.localeData = /*today*/ ctx[9].localeData();
-			if (dirty & /*$activeFile*/ 2048) calendarbase_changes.selectedId = /*$activeFile*/ ctx[11];
+			if (dirty & /*today*/ 1024) calendarbase_changes.localeData = /*today*/ ctx[10].localeData();
+			if (dirty & /*$activeFile*/ 512) calendarbase_changes.selectedId = /*$activeFile*/ ctx[9];
 			if (dirty & /*$settings*/ 256) calendarbase_changes.showWeekNums = /*$settings*/ ctx[8].showWeeklyNote;
 
 			if (!updating_displayedMonth && dirty & /*displayedMonth*/ 1) {
@@ -4021,6 +4313,14 @@ function create_fragment(ctx) {
 			}
 
 			calendarbase.$set(calendarbase_changes);
+
+			if (!current || dirty & /*previousDailyNote*/ 4096 && button0_disabled_value !== (button0_disabled_value = !/*previousDailyNote*/ ctx[12])) {
+				button0.disabled = button0_disabled_value;
+			}
+
+			if (!current || dirty & /*nextDailyNote*/ 8192 && button1_disabled_value !== (button1_disabled_value = !/*nextDailyNote*/ ctx[13])) {
+				button1.disabled = button1_disabled_value;
+			}
 		},
 		i(local) {
 			if (current) return;
@@ -4032,20 +4332,22 @@ function create_fragment(ctx) {
 			current = false;
 		},
 		d(detaching) {
-			if (detaching) detach$1(div);
+			if (detaching) detach$1(div1);
 			destroy_component$1(calendarbase);
-			/*div_binding*/ ctx[14](null);
+			/*div1_binding*/ ctx[22](null);
+			mounted = false;
+			run_all$1(dispose);
 		}
 	};
 }
 
 function instance($$self, $$props, $$invalidate) {
 	let $settings;
+	let $dailyNotes;
 	let $activeFile;
 	component_subscribe($$self, settings, $$value => $$invalidate(8, $settings = $$value));
-	component_subscribe($$self, activeFile, $$value => $$invalidate(11, $activeFile = $$value));
-
-
+	component_subscribe($$self, dailyNotes, $$value => $$invalidate(18, $dailyNotes = $$value));
+	component_subscribe($$self, activeFile, $$value => $$invalidate(9, $activeFile = $$value));
 	let today;
 	let calendarEl;
 	let { displayedMonth = today } = $$props;
@@ -4056,9 +4358,13 @@ function instance($$self, $$props, $$invalidate) {
 	let { onClickWeek } = $$props;
 	let { onContextMenuDay } = $$props;
 	let { onContextMenuWeek } = $$props;
+	let { onNavigateDailyNote = () => undefined } = $$props;
+	let activeDailyDate;
+	let previousDailyNote;
+	let nextDailyNote;
 
 	function tick() {
-		$$invalidate(9, today = window.moment());
+		$$invalidate(10, today = window.moment());
 	}
 
 	function getToday(settings) {
@@ -4066,6 +4372,12 @@ function instance($$self, $$props, $$invalidate) {
 		dailyNotes.reindex();
 		weeklyNotes.reindex();
 		return window.moment();
+	}
+
+	function navigateToDailyNote(note) {
+		if (note) {
+			onNavigateDailyNote(note.date);
+		}
 	}
 
 	afterUpdate(() => {
@@ -4106,27 +4418,51 @@ function instance($$self, $$props, $$invalidate) {
 		$$invalidate(0, displayedMonth);
 	}
 
-	function div_binding($$value) {
-		binding_callbacks$1[$$value ? "unshift" : "push"](() => {
+	const click_handler = () => navigateToDailyNote(previousDailyNote);
+	const click_handler_1 = () => navigateToDailyNote(nextDailyNote);
+
+	function div1_binding($$value) {
+		binding_callbacks$1[$$value ? 'unshift' : 'push'](() => {
 			calendarEl = $$value;
-			$$invalidate(10, calendarEl);
+			$$invalidate(11, calendarEl);
 		});
 	}
 
 	$$self.$$set = $$props => {
-		if ("displayedMonth" in $$props) $$invalidate(0, displayedMonth = $$props.displayedMonth);
-		if ("sources" in $$props) $$invalidate(1, sources = $$props.sources);
-		if ("onHoverDay" in $$props) $$invalidate(2, onHoverDay = $$props.onHoverDay);
-		if ("onHoverWeek" in $$props) $$invalidate(3, onHoverWeek = $$props.onHoverWeek);
-		if ("onClickDay" in $$props) $$invalidate(4, onClickDay = $$props.onClickDay);
-		if ("onClickWeek" in $$props) $$invalidate(5, onClickWeek = $$props.onClickWeek);
-		if ("onContextMenuDay" in $$props) $$invalidate(6, onContextMenuDay = $$props.onContextMenuDay);
-		if ("onContextMenuWeek" in $$props) $$invalidate(7, onContextMenuWeek = $$props.onContextMenuWeek);
+		if ('displayedMonth' in $$props) $$invalidate(0, displayedMonth = $$props.displayedMonth);
+		if ('sources' in $$props) $$invalidate(1, sources = $$props.sources);
+		if ('onHoverDay' in $$props) $$invalidate(2, onHoverDay = $$props.onHoverDay);
+		if ('onHoverWeek' in $$props) $$invalidate(3, onHoverWeek = $$props.onHoverWeek);
+		if ('onClickDay' in $$props) $$invalidate(4, onClickDay = $$props.onClickDay);
+		if ('onClickWeek' in $$props) $$invalidate(5, onClickWeek = $$props.onClickWeek);
+		if ('onContextMenuDay' in $$props) $$invalidate(6, onContextMenuDay = $$props.onContextMenuDay);
+		if ('onContextMenuWeek' in $$props) $$invalidate(7, onContextMenuWeek = $$props.onContextMenuWeek);
+		if ('onNavigateDailyNote' in $$props) $$invalidate(15, onNavigateDailyNote = $$props.onNavigateDailyNote);
 	};
 
 	$$self.$$.update = () => {
 		if ($$self.$$.dirty & /*$settings*/ 256) {
-			$$invalidate(9, today = getToday($settings));
+			$$invalidate(10, today = getToday($settings));
+		}
+
+		if ($$self.$$.dirty & /*$dailyNotes, $activeFile*/ 262656) {
+			$$invalidate(17, activeDailyDate = ($dailyNotes === null || $dailyNotes === void 0
+			? void 0
+			: $dailyNotes[$activeFile])
+			? getDateFromDailyNoteFile($dailyNotes[$activeFile])
+			: null);
+		}
+
+		if ($$self.$$.dirty & /*activeDailyDate, $dailyNotes*/ 393216) {
+			$$invalidate(12, previousDailyNote = activeDailyDate
+			? getAdjacentDailyNote(activeDailyDate, $dailyNotes || {}, "previous")
+			: null);
+		}
+
+		if ($$self.$$.dirty & /*activeDailyDate, $dailyNotes*/ 393216) {
+			$$invalidate(13, nextDailyNote = activeDailyDate
+			? getAdjacentDailyNote(activeDailyDate, $dailyNotes || {}, "next")
+			: null);
 		}
 	};
 
@@ -4140,12 +4476,20 @@ function instance($$self, $$props, $$invalidate) {
 		onContextMenuDay,
 		onContextMenuWeek,
 		$settings,
+		$activeFile,
 		today,
 		calendarEl,
-		$activeFile,
+		previousDailyNote,
+		nextDailyNote,
+		navigateToDailyNote,
+		onNavigateDailyNote,
 		tick,
+		activeDailyDate,
+		$dailyNotes,
 		calendarbase_displayedMonth_binding,
-		div_binding
+		click_handler,
+		click_handler_1,
+		div1_binding
 	];
 }
 
@@ -4153,21 +4497,30 @@ class Calendar extends SvelteComponent$1 {
 	constructor(options) {
 		super();
 
-		init$1(this, options, instance, create_fragment, not_equal$1, {
-			displayedMonth: 0,
-			sources: 1,
-			onHoverDay: 2,
-			onHoverWeek: 3,
-			onClickDay: 4,
-			onClickWeek: 5,
-			onContextMenuDay: 6,
-			onContextMenuWeek: 7,
-			tick: 12
-		});
+		init$1(
+			this,
+			options,
+			instance,
+			create_fragment,
+			not_equal$1,
+			{
+				displayedMonth: 0,
+				sources: 1,
+				onHoverDay: 2,
+				onHoverWeek: 3,
+				onClickDay: 4,
+				onClickWeek: 5,
+				onContextMenuDay: 6,
+				onContextMenuWeek: 7,
+				onNavigateDailyNote: 15,
+				tick: 16
+			},
+			add_css
+		);
 	}
 
 	get tick() {
-		return this.$$.ctx[12];
+		return this.$$.ctx[16];
 	}
 }
 
@@ -4391,53 +4744,66 @@ class CalendarView extends require$$0.ItemView {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             target: this.contentEl,
             props: {
-                onClickDay: this.openOrCreateDailyNote,
-                onClickWeek: this.openOrCreateWeeklyNote,
+                onClickDay: (date, inNewSplit) => {
+                    void this.openOrCreateDailyNote(date, inNewSplit);
+                    return true;
+                },
+                onClickWeek: (date, inNewSplit) => {
+                    void this.openOrCreateWeeklyNote(date, inNewSplit);
+                    return true;
+                },
                 onHoverDay: this.onHoverDay,
                 onHoverWeek: this.onHoverWeek,
                 onContextMenuDay: this.onContextMenuDay,
                 onContextMenuWeek: this.onContextMenuWeek,
+                onNavigateDailyNote: (date) => {
+                    void this.navigateToExistingDailyNote(date);
+                },
                 sources,
             },
         });
     }
-    onHoverDay(date, targetEl, isMetaPressed) {
+    onHoverDay(date, targetEl, isMetaPressed = false) {
         if (!isMetaPressed) {
-            return;
+            return false;
         }
         const { format } = mainExports.getDailyNoteSettings();
         const note = mainExports.getDailyNote(date, get_store_value(dailyNotes));
         this.app.workspace.trigger("link-hover", this, targetEl, date.format(format), note === null || note === void 0 ? void 0 : note.path);
+        return true;
     }
-    onHoverWeek(date, targetEl, isMetaPressed) {
+    onHoverWeek(date, targetEl, isMetaPressed = false) {
         if (!isMetaPressed) {
-            return;
+            return false;
         }
         const note = mainExports.getWeeklyNote(date, get_store_value(weeklyNotes));
         const { format } = mainExports.getWeeklyNoteSettings();
         this.app.workspace.trigger("link-hover", this, targetEl, date.format(format), note === null || note === void 0 ? void 0 : note.path);
+        return true;
     }
     onContextMenuDay(date, event) {
         const note = mainExports.getDailyNote(date, get_store_value(dailyNotes));
         if (!note) {
             // If no file exists for a given day, show nothing.
-            return;
+            return false;
         }
         showFileMenu(this.app, note, {
             x: event.pageX,
             y: event.pageY,
         });
+        return true;
     }
     onContextMenuWeek(date, event) {
         const note = mainExports.getWeeklyNote(date, get_store_value(weeklyNotes));
         if (!note) {
             // If no file exists for a given day, show nothing.
-            return;
+            return false;
         }
         showFileMenu(this.app, note, {
             x: event.pageX,
             y: event.pageY,
         });
+        return true;
     }
     onNoteSettingsUpdate() {
         dailyNotes.reindex();
@@ -4445,7 +4811,7 @@ class CalendarView extends require$$0.ItemView {
         this.updateActiveFile();
     }
     async onFileDeleted(file) {
-        if (mainExports.getDateFromFile(file, "day")) {
+        if (getDateFromDailyNoteFile(file)) {
             dailyNotes.reindex();
             this.updateActiveFile();
         }
@@ -4455,14 +4821,14 @@ class CalendarView extends require$$0.ItemView {
         }
     }
     async onFileModified(file) {
-        const date = mainExports.getDateFromFile(file, "day") || mainExports.getDateFromFile(file, "week");
+        const date = getDateFromDailyNoteFile(file) || mainExports.getDateFromFile(file, "week");
         if (date && this.calendar) {
             this.calendar.tick();
         }
     }
     onFileCreated(file) {
         if (this.app.workspace.layoutReady && this.calendar) {
-            if (mainExports.getDateFromFile(file, "day")) {
+            if (getDateFromDailyNoteFile(file)) {
                 dailyNotes.reindex();
                 this.calendar.tick();
             }
@@ -4493,7 +4859,7 @@ class CalendarView extends require$$0.ItemView {
         const { activeLeaf } = this.app.workspace;
         if ((activeLeaf === null || activeLeaf === void 0 ? void 0 : activeLeaf.view) instanceof require$$0.FileView) {
             // Check to see if the active note is a daily-note
-            let date = mainExports.getDateFromFile(activeLeaf.view.file, "day");
+            let date = getDateFromDailyNoteFile(activeLeaf.view.file);
             if (date) {
                 this.calendar.$set({ displayedMonth: date });
                 return;
@@ -4543,6 +4909,11 @@ class CalendarView extends require$$0.ItemView {
         await leaf.openFile(existingFile, { active: true, state: { mode } });
         activeFile.setFile(existingFile);
     }
+    async navigateToExistingDailyNote(date) {
+        var _a;
+        await this.openOrCreateDailyNote(date, false);
+        (_a = this.calendar) === null || _a === void 0 ? void 0 : _a.$set({ displayedMonth: date });
+    }
 }
 
 /** Renders ```erin-calendar blocks in reading view. */
@@ -4557,12 +4928,27 @@ class CalendarEmbed extends require$$0.MarkdownRenderChild {
         this.calendar = new Calendar({
             target: this.containerEl,
             props: {
-                onClickDay: async (date, inNewSplit) => (await this.plugin.getOrCreateCalendarView()).openOrCreateDailyNote(date, inNewSplit),
-                onClickWeek: async (date, inNewSplit) => (await this.plugin.getOrCreateCalendarView()).openOrCreateWeeklyNote(date, inNewSplit),
-                onHoverDay: () => undefined,
-                onHoverWeek: () => undefined,
-                onContextMenuDay: () => undefined,
-                onContextMenuWeek: () => undefined,
+                onClickDay: (date, inNewSplit) => {
+                    void this.plugin
+                        .getOrCreateCalendarView()
+                        .then((view) => view.openOrCreateDailyNote(date, inNewSplit));
+                    return true;
+                },
+                onClickWeek: (date, inNewSplit) => {
+                    void this.plugin
+                        .getOrCreateCalendarView()
+                        .then((view) => view.openOrCreateWeeklyNote(date, inNewSplit));
+                    return true;
+                },
+                onHoverDay: () => true,
+                onHoverWeek: () => true,
+                onContextMenuDay: () => true,
+                onContextMenuWeek: () => true,
+                onNavigateDailyNote: (date) => {
+                    void this.plugin
+                        .getOrCreateCalendarView()
+                        .then((view) => view.openOrCreateDailyNote(date, false));
+                },
                 sources: [customTagsSource, streakSource, wordCountSource, tasksSource],
             },
         });
@@ -4575,7 +4961,6 @@ class CalendarEmbed extends require$$0.MarkdownRenderChild {
 }
 
 class CalendarPlugin extends require$$0.Plugin {
-    onunload() { }
     async onload() {
         this.register(settings.subscribe((value) => {
             this.options = value;

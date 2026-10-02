@@ -23,8 +23,6 @@ export default class CalendarPlugin extends Plugin {
   public options: ISettings;
   private view: CalendarView;
 
-  onunload(): void {}
-
   async onload(): Promise<void> {
     this.register(
       settings.subscribe((value) => {

@@ -4,11 +4,16 @@
   import type { Moment } from "moment";
   import {
     Calendar as CalendarBase,
-    ICalendarSource,
     configureGlobalMomentLocale,
   } from "obsidian-calendar-ui";
+  import type { ICalendarSource } from "obsidian-calendar-ui";
   import { afterUpdate, onDestroy } from "svelte";
 
+  import {
+    getAdjacentDailyNote,
+    getDateFromDailyNoteFile,
+  } from "../io/dailyNotesIndex";
+  import type { DailyNoteEntry } from "../io/dailyNotesIndex";
   import type { ISettings } from "src/settings";
   import { activeFile, dailyNotes, settings, weeklyNotes } from "./stores";
 
@@ -19,12 +24,25 @@
 
   export let displayedMonth: Moment = today;
   export let sources: ICalendarSource[];
-  export let onHoverDay: (date: Moment, targetEl: EventTarget) => boolean;
-  export let onHoverWeek: (date: Moment, targetEl: EventTarget) => boolean;
+  export let onHoverDay: (
+    date: Moment,
+    targetEl: EventTarget,
+    isMetaPressed?: boolean
+  ) => boolean;
+  export let onHoverWeek: (
+    date: Moment,
+    targetEl: EventTarget,
+    isMetaPressed?: boolean
+  ) => boolean;
   export let onClickDay: (date: Moment, isMetaPressed: boolean) => boolean;
   export let onClickWeek: (date: Moment, isMetaPressed: boolean) => boolean;
   export let onContextMenuDay: (date: Moment, event: MouseEvent) => boolean;
   export let onContextMenuWeek: (date: Moment, event: MouseEvent) => boolean;
+  export let onNavigateDailyNote: (date: Moment) => void = () => undefined;
+
+  let activeDailyDate: Moment | null;
+  let previousDailyNote: DailyNoteEntry | null;
+  let nextDailyNote: DailyNoteEntry | null;
 
   export function tick() {
     today = window.moment();
@@ -35,6 +53,22 @@
     dailyNotes.reindex();
     weeklyNotes.reindex();
     return window.moment();
+  }
+
+  $: activeDailyDate = $dailyNotes?.[$activeFile]
+    ? getDateFromDailyNoteFile($dailyNotes[$activeFile])
+    : null;
+  $: previousDailyNote = activeDailyDate
+    ? getAdjacentDailyNote(activeDailyDate, $dailyNotes || {}, "previous")
+    : null;
+  $: nextDailyNote = activeDailyDate
+    ? getAdjacentDailyNote(activeDailyDate, $dailyNotes || {}, "next")
+    : null;
+
+  function navigateToDailyNote(note: DailyNoteEntry | null): void {
+    if (note) {
+      onNavigateDailyNote(note.date);
+    }
   }
 
   afterUpdate(() => {
@@ -80,4 +114,38 @@
   selectedId={$activeFile}
   showWeekNums={$settings.showWeeklyNote}
   />
+
+  <div class="existing-note-navigation" aria-label="Daily note navigation">
+    <button
+      aria-label="Open previous existing daily note"
+      disabled={!previousDailyNote}
+      on:click={() => navigateToDailyNote(previousDailyNote)}
+      type="button"
+    >
+      Prev
+    </button>
+    <button
+      aria-label="Open next existing daily note"
+      disabled={!nextDailyNote}
+      on:click={() => navigateToDailyNote(nextDailyNote)}
+      type="button"
+    >
+      Next
+    </button>
+  </div>
 </div>
+
+<style>
+  .existing-note-navigation {
+    display: flex;
+    gap: 0.5em;
+    justify-content: center;
+    margin-top: 0.5em;
+  }
+
+  .existing-note-navigation button {
+    color: var(--text-muted);
+    font-size: 0.7em;
+    text-transform: uppercase;
+  }
+</style>

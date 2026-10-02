@@ -2,16 +2,16 @@
   "extends": "@tsconfig/svelte/tsconfig.json",
 
   "include": ["src/**/*"],
-  "exclude": ["node_modules/*", "src/testUtils/**"],
+  "exclude": ["node_modules"],
   "compilerOptions": {
     "types": ["node", "svelte", "jest"],
     "baseUrl": ".",
     "paths": {
-      "src": ["src/*"]
+      "src/*": ["src/*"]
     },
     "strict": false,
     "skipLibCheck": true,
-    "strict": false,
-    "skipLibCheck": true
+    "verbatimModuleSyntax": false,
+    "ignoreDeprecations": "5.0"
   }
 }

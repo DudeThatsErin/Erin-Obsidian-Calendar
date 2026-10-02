@@ -959,7 +959,7 @@ class CalendarSettingsTab extends require$$0.PluginSettingTab {
     addWeekdayLabelFormatSetting() {
         new require$$0.Setting(this.containerEl)
             .setName("Weekday label format")
-            .setDesc("Moment.js format for weekday headings: ddd for Mon, dd for Mo, or d for M.")
+            .setDesc("Weekday format: d for M (single letter), dd for Mo, or ddd for Mon.")
             .addText((textfield) => {
             textfield.setPlaceholder("ddd");
             textfield.setValue(this.plugin.options.weekdayLabelFormat || "ddd");
@@ -3965,21 +3965,21 @@ function create_fragment(ctx) {
 	let current;
 
 	function calendarbase_displayedMonth_binding(value) {
-		/*calendarbase_displayedMonth_binding*/ ctx[13](value);
+		/*calendarbase_displayedMonth_binding*/ ctx[14](value);
 	}
 
 	let calendarbase_props = {
 		sources: /*sources*/ ctx[1],
-		today: /*today*/ ctx[9],
+		today: /*today*/ ctx[8],
 		onHoverDay: /*onHoverDay*/ ctx[2],
 		onHoverWeek: /*onHoverWeek*/ ctx[3],
 		onContextMenuDay: /*onContextMenuDay*/ ctx[6],
 		onContextMenuWeek: /*onContextMenuWeek*/ ctx[7],
 		onClickDay: /*onClickDay*/ ctx[4],
 		onClickWeek: /*onClickWeek*/ ctx[5],
-		localeData: /*today*/ ctx[9].localeData(),
-		selectedId: /*$activeFile*/ ctx[11],
-		showWeekNums: /*$settings*/ ctx[8].showWeeklyNote
+		localeData: /*today*/ ctx[8].localeData(),
+		selectedId: /*$activeFile*/ ctx[10],
+		showWeekNums: /*$settings$settings*/ ctx[11].showWeeklyNote
 	};
 
 	if (/*displayedMonth*/ ctx[0] !== void 0) {
@@ -3997,22 +3997,22 @@ function create_fragment(ctx) {
 		m(target, anchor) {
 			insert$1(target, div, anchor);
 			mount_component$1(calendarbase, div, null);
-			/*div_binding*/ ctx[14](div);
+			/*div_binding*/ ctx[15](div);
 			current = true;
 		},
 		p(ctx, [dirty]) {
 			const calendarbase_changes = {};
 			if (dirty & /*sources*/ 2) calendarbase_changes.sources = /*sources*/ ctx[1];
-			if (dirty & /*today*/ 512) calendarbase_changes.today = /*today*/ ctx[9];
+			if (dirty & /*today*/ 256) calendarbase_changes.today = /*today*/ ctx[8];
 			if (dirty & /*onHoverDay*/ 4) calendarbase_changes.onHoverDay = /*onHoverDay*/ ctx[2];
 			if (dirty & /*onHoverWeek*/ 8) calendarbase_changes.onHoverWeek = /*onHoverWeek*/ ctx[3];
 			if (dirty & /*onContextMenuDay*/ 64) calendarbase_changes.onContextMenuDay = /*onContextMenuDay*/ ctx[6];
 			if (dirty & /*onContextMenuWeek*/ 128) calendarbase_changes.onContextMenuWeek = /*onContextMenuWeek*/ ctx[7];
 			if (dirty & /*onClickDay*/ 16) calendarbase_changes.onClickDay = /*onClickDay*/ ctx[4];
 			if (dirty & /*onClickWeek*/ 32) calendarbase_changes.onClickWeek = /*onClickWeek*/ ctx[5];
-			if (dirty & /*today*/ 512) calendarbase_changes.localeData = /*today*/ ctx[9].localeData();
-			if (dirty & /*$activeFile*/ 2048) calendarbase_changes.selectedId = /*$activeFile*/ ctx[11];
-			if (dirty & /*$settings*/ 256) calendarbase_changes.showWeekNums = /*$settings*/ ctx[8].showWeeklyNote;
+			if (dirty & /*today*/ 256) calendarbase_changes.localeData = /*today*/ ctx[8].localeData();
+			if (dirty & /*$activeFile*/ 1024) calendarbase_changes.selectedId = /*$activeFile*/ ctx[10];
+			if (dirty & /*$settings$settings*/ 2048) calendarbase_changes.showWeekNums = /*$settings$settings*/ ctx[11].showWeeklyNote;
 
 			if (!updating_displayedMonth && dirty & /*displayedMonth*/ 1) {
 				updating_displayedMonth = true;
@@ -4034,7 +4034,7 @@ function create_fragment(ctx) {
 		d(detaching) {
 			if (detaching) detach$1(div);
 			destroy_component$1(calendarbase);
-			/*div_binding*/ ctx[14](null);
+			/*div_binding*/ ctx[15](null);
 		}
 	};
 }
@@ -4042,8 +4042,10 @@ function create_fragment(ctx) {
 function instance($$self, $$props, $$invalidate) {
 	let $settings;
 	let $activeFile;
-	component_subscribe($$self, settings, $$value => $$invalidate(8, $settings = $$value));
-	component_subscribe($$self, activeFile, $$value => $$invalidate(11, $activeFile = $$value));
+	let $settings$settings;
+	component_subscribe($$self, settings, $$value => $$invalidate(13, $settings = $$value));
+	component_subscribe($$self, activeFile, $$value => $$invalidate(10, $activeFile = $$value));
+	component_subscribe($$self, settings$settings, $$value => $$invalidate(11, $settings$settings = $$value));
 
 
 	let today;
@@ -4058,7 +4060,7 @@ function instance($$self, $$props, $$invalidate) {
 	let { onContextMenuWeek } = $$props;
 
 	function tick() {
-		$$invalidate(9, today = window.moment());
+		$$invalidate(8, today = window.moment());
 	}
 
 	function getToday(settings) {
@@ -4070,13 +4072,15 @@ function instance($$self, $$props, $$invalidate) {
 
 	afterUpdate(() => {
 		const format = $settings.weekdayLabelFormat || "ddd";
+		const singleLetter = format === "d";
 
 		calendarEl === null || calendarEl === void 0
 		? void 0
 		: calendarEl.querySelectorAll("thead th").forEach((heading, index) => {
 				if ($settings.showWeeklyNote && index === 0) return;
 				const dayIndex = $settings.showWeeklyNote ? index - 1 : index;
-				heading.textContent = today.clone().startOf("week").add(dayIndex, "day").format(format);
+				const label = today.clone().startOf("week").add(dayIndex, "day").format(singleLetter ? "dd" : format);
+				heading.textContent = singleLetter ? label.charAt(0) : label;
 			});
 	});
 
@@ -4107,7 +4111,7 @@ function instance($$self, $$props, $$invalidate) {
 	function div_binding($$value) {
 		binding_callbacks$1[$$value ? "unshift" : "push"](() => {
 			calendarEl = $$value;
-			$$invalidate(10, calendarEl);
+			$$invalidate(9, calendarEl);
 		});
 	}
 
@@ -4123,8 +4127,8 @@ function instance($$self, $$props, $$invalidate) {
 	};
 
 	$$self.$$.update = () => {
-		if ($$self.$$.dirty & /*$settings*/ 256) {
-			$$invalidate(9, today = getToday($settings));
+		if ($$self.$$.dirty & /*$settings*/ 8192) {
+			$$invalidate(8, today = getToday($settings));
 		}
 	};
 
@@ -4137,11 +4141,12 @@ function instance($$self, $$props, $$invalidate) {
 		onClickWeek,
 		onContextMenuDay,
 		onContextMenuWeek,
-		$settings,
 		today,
 		calendarEl,
 		$activeFile,
+		$settings$settings,
 		tick,
+		$settings,
 		calendarbase_displayedMonth_binding,
 		div_binding
 	];

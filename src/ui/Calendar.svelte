@@ -39,10 +39,12 @@
 
   afterUpdate(() => {
     const format = $settings.weekdayLabelFormat || "ddd";
+    const singleLetter = format === "d";
     calendarEl?.querySelectorAll<HTMLTableCellElement>("thead th").forEach((heading, index) => {
       if ($settings.showWeeklyNote && index === 0) return;
       const dayIndex = $settings.showWeeklyNote ? index - 1 : index;
-      heading.textContent = today.clone().startOf("week").add(dayIndex, "day").format(format);
+      const label = today.clone().startOf("week").add(dayIndex, "day").format(singleLetter ? "dd" : format);
+      heading.textContent = singleLetter ? label.charAt(0) : label;
     });
   });
 
@@ -76,6 +78,6 @@
   bind:displayedMonth
   localeData={today.localeData()}
   selectedId={$activeFile}
-  showWeekNums={$settings.showWeeklyNote}
+  showWeekNums={$settings$settings.showWeeklyNote}
   />
 </div>

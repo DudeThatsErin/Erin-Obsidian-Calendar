@@ -169,7 +169,7 @@ export class CalendarSettingsTab extends PluginSettingTab {
   addWeekdayLabelFormatSetting(): void {
     new Setting(this.containerEl)
       .setName("Weekday label format")
-      .setDesc("Moment.js format for weekday headings: ddd for Mon, dd for Mo, or d for M.")
+      .setDesc("Weekday format: d for M (single letter), dd for Mo, or ddd for Mon.")
       .addText((textfield) => {
         textfield.setPlaceholder("ddd");
         textfield.setValue(this.plugin.options.weekdayLabelFormat || "ddd");

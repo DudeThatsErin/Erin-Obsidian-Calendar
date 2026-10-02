@@ -78,6 +78,6 @@
   bind:displayedMonth
   localeData={today.localeData()}
   selectedId={$activeFile}
-  showWeekNums={$settings$settings.showWeeklyNote}
+  showWeekNums={$settings.showWeeklyNote}
   />
 </div>

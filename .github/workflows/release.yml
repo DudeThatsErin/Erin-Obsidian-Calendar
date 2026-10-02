@@ -18,6 +18,39 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify BRAT release files
+        env:
+          TAG_VERSION: ${{ github.ref_name }}
+        run: |
+          test -s main.js
+          test -s styles.css
+          test -s manifest.json
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+          const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const tag = process.env.TAG_VERSION;
+
+          for (const field of ["id", "name", "version", "minAppVersion"]) {
+            if (!manifest[field]) {
+              throw new Error(`manifest.json is missing ${field}`);
+            }
+          }
+
+          if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
+            throw new Error(`Release tags must be plain semantic versions, received: ${tag}`);
+          }
+          if (manifest.version !== tag) {
+            throw new Error(`manifest.json version (${manifest.version}) does not match tag (${tag})`);
+          }
+          if (packageJson.version !== manifest.version) {
+            throw new Error(
+              `package.json version (${packageJson.version}) does not match manifest.json (${manifest.version})`,
+            );
+          }
+          NODE
+
       - name: Attest main.js
         uses: actions/attest-build-provenance@v1
         with:

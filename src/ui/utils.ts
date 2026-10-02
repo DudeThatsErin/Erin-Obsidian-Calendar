@@ -1,6 +1,10 @@
 import type { TFile } from "obsidian";
-import { getDateFromFile, getDateUID } from "obsidian-daily-notes-interface";
-import { getDateFromDailyNoteFile } from "../io/dailyNotesIndex";
+import { getDateUID } from "obsidian-daily-notes-interface";
+import {
+  getDateFromCalendarDailyNote,
+} from "../io/dailyNotesIndex";
+import type { DailyNoteIndexOptions } from "../io/dailyNotesIndex";
+import { getDateFromWeeklyNoteFile } from "../io/weeklyNotesIndex";
 
 export const classList = (obj: Record<string, boolean>): string[] => {
   return Object.entries(obj)
@@ -40,17 +44,20 @@ export function partition(
  *
  * @param file
  */
-export function getDateUIDFromFile(file: TFile | null): string {
+export function getDateUIDFromFile(
+  file: TFile | null,
+  dailyOptions: DailyNoteIndexOptions = {}
+): string {
   if (!file) {
     return null;
   }
 
-  let date = getDateFromDailyNoteFile(file);
+  let date = getDateFromCalendarDailyNote(file, dailyOptions);
   if (date) {
     return getDateUID(date, "day");
   }
 
-  date = getDateFromFile(file, "week");
+  date = getDateFromWeeklyNoteFile(file);
   if (date) {
     return getDateUID(date, "week");
   }

@@ -1,5 +1,4 @@
 import type { Moment } from "moment";
-import { normalizePath } from "obsidian";
 import type { TFile } from "obsidian";
 import {
   DEFAULT_DAILY_NOTE_FORMAT,
@@ -7,40 +6,215 @@ import {
   getDateUID,
 } from "obsidian-daily-notes-interface";
 
+import {
+  getConfiguredNoteForDate,
+  parseConfiguredNoteDate,
+} from "./notePaths";
+
 export interface DailyNoteEntry {
   date: Moment;
   file: TFile;
 }
 
-export function getDateFromDailyNoteFile(file: TFile): Moment | null {
-  const settings = getDailyNoteSettings() || {};
-  const folder = settings.folder || "";
-  const format = settings.format || DEFAULT_DAILY_NOTE_FORMAT;
-  const normalizedFolder = normalizePath(folder)
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/^\.$/, "");
-  const prefix = normalizedFolder ? `${normalizedFolder}/` : "";
-
-  if (prefix && !file.path.startsWith(prefix)) return null;
-
-  const relativePath = file.path.slice(prefix.length).replace(/\.md$/i, "");
-  const date = window.moment(relativePath, format, true);
-
-  return date.isValid() ? date : null;
+export interface DailyNoteIndexOptions {
+  metadataDateFormat?: string;
+  metadataDateProperty?: string;
+  useMetadataDates?: boolean;
 }
 
+export interface DailyNotesIndex {
+  /** Every markdown file by exact, normalized vault path. */
+  filesByPath: Record<string, TFile>;
+  /** All files associated with a calendar day, including metadata matches. */
+  filesByDate: Record<string, TFile[]>;
+  /** Sorted entries used for previous/next existing-note navigation. */
+  entries: DailyNoteEntry[];
+}
+
+function dailyNoteSettings() {
+  const settings = getDailyNoteSettings() || {};
+  return {
+    ...settings,
+    format: settings.format || DEFAULT_DAILY_NOTE_FORMAT,
+  };
+}
+
+function uniqueFiles(files: TFile[]): TFile[] {
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    if (seen.has(file.path)) {
+      return false;
+    }
+    seen.add(file.path);
+    return true;
+  });
+}
+
+function addDateEntry(
+  index: DailyNotesIndex,
+  date: Moment,
+  file: TFile
+): void {
+  const id = getDateUID(date, "day");
+  const dateFiles = index.filesByDate[id] || [];
+  if (!dateFiles.some((existing) => existing.path === file.path)) {
+    dateFiles.push(file);
+    index.filesByDate[id] = dateFiles;
+    index.entries.push({ date: date.clone().startOf("day"), file });
+  }
+}
+
+/** Parse a daily note path using the exact Daily Notes folder and format. */
+export function getDateFromDailyNoteFile(file: TFile): Moment | null {
+  return parseConfiguredNoteDate(file, dailyNoteSettings());
+}
+
+function parseMetadataDateValue(
+  value: unknown,
+  format: string
+): Moment | null {
+  if (value instanceof Date || typeof value === "number") {
+    const date = window.moment(value);
+    return date.isValid() ? date : null;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const configured = window.moment(value, format, true);
+  if (configured.isValid()) {
+    return configured;
+  }
+
+  const iso = window.moment(value, window.moment.ISO_8601, true);
+  return iso.isValid() ? iso : null;
+}
+
+/**
+ * Read the configured frontmatter property as a calendar date. A strict custom
+ * format is preferred, with ISO dates/timestamps accepted for imported notes.
+ */
+export function getDateFromDailyNoteMetadata(
+  file: TFile,
+  options: DailyNoteIndexOptions = {}
+): Moment | null {
+  if (!options.useMetadataDates) {
+    return null;
+  }
+
+  const property = options.metadataDateProperty?.trim() || "date";
+  const format = options.metadataDateFormat?.trim() || "YYYY-MM-DD";
+  const frontmatter = window.app.metadataCache?.getFileCache(file)?.frontmatter;
+  const rawValue = frontmatter?.[property];
+  const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+
+  for (const value of values) {
+    const date = parseMetadataDateValue(value, format);
+    if (date) {
+      return date;
+    }
+  }
+  return null;
+}
+
+/** Prefer a configured metadata date when that optional integration is on. */
+export function getDateFromCalendarDailyNote(
+  file: TFile,
+  options: DailyNoteIndexOptions = {}
+): Moment | null {
+  return (
+    getDateFromDailyNoteMetadata(file, options) ||
+    getDateFromDailyNoteFile(file)
+  );
+}
+
+/**
+ * Build a full daily-note index. Unlike the interface package's UID-only map,
+ * this retains all files for a date and an exact path lookup for month/year
+ * formats whose one note represents more than one calendar day.
+ */
+export function getAllDailyNotesIndex(
+  options: DailyNoteIndexOptions = {}
+): DailyNotesIndex {
+  const index: DailyNotesIndex = {
+    filesByPath: {},
+    filesByDate: {},
+    entries: [],
+  };
+
+  window.app.vault.getMarkdownFiles().forEach((file) => {
+    index.filesByPath[file.path] = file;
+
+    const filenameDate = getDateFromDailyNoteFile(file);
+    if (filenameDate) {
+      addDateEntry(index, filenameDate, file);
+    }
+
+    const metadataDate = getDateFromDailyNoteMetadata(file, options);
+    if (metadataDate) {
+      addDateEntry(index, metadataDate, file);
+    }
+  });
+
+  index.entries.sort((left, right) => {
+    const dateDifference = left.date.valueOf() - right.date.valueOf();
+    return dateDifference || left.file.path.localeCompare(right.file.path);
+  });
+  return index;
+}
+
+/**
+ * Compatibility helper for callers that only need one path-parsed note per
+ * day. Internal calendar code should use the richer index above.
+ */
 export function getAllDailyNotesByPath(): Record<string, TFile> {
   const notes: Record<string, TFile> = {};
-  window.app.vault.getMarkdownFiles().forEach((file) => {
-    const date = getDateFromDailyNoteFile(file);
-    if (date) notes[getDateUID(date, "day")] = file;
+  getAllDailyNotesIndex().entries.forEach(({ date, file }) => {
+    notes[getDateUID(date, "day")] = file;
   });
   return notes;
 }
 
+/**
+ * Resolve all notes for a clicked calendar date. The canonical path lookup is
+ * deliberately first, so `YYYYMM` and quoted formats find their existing
+ * shared note before a new note can be created.
+ */
+export function getDailyNotesForDate(
+  date: Moment,
+  index: DailyNotesIndex | null
+): TFile[] {
+  if (!index) {
+    return [];
+  }
+
+  const canonical = getConfiguredNoteForDate(
+    date,
+    dailyNoteSettings(),
+    index.filesByPath
+  );
+  const indexed = index.filesByDate[getDateUID(date, "day")] || [];
+  return uniqueFiles(canonical ? [canonical, ...indexed] : indexed);
+}
+
+export function getDailyNoteForDate(
+  date: Moment,
+  index: DailyNotesIndex | null
+): TFile | null {
+  return getDailyNotesForDate(date, index)[0] || null;
+}
+
 export function getDailyNoteEntries(
-  notes: Record<string, TFile>
+  notes: DailyNotesIndex | Record<string, TFile> | null | undefined
 ): DailyNoteEntry[] {
+  if (!notes) {
+    return [];
+  }
+  const index = notes as DailyNotesIndex;
+  if (Array.isArray(index.entries)) {
+    return index.entries;
+  }
+
   return Object.values(notes)
     .map((file) => {
       const date = getDateFromDailyNoteFile(file);
@@ -52,7 +226,7 @@ export function getDailyNoteEntries(
 
 export function getAdjacentDailyNote(
   date: Moment,
-  notes: Record<string, TFile>,
+  notes: DailyNotesIndex | Record<string, TFile> | null | undefined,
   direction: "previous" | "next"
 ): DailyNoteEntry | null {
   const entries = getDailyNoteEntries(notes);

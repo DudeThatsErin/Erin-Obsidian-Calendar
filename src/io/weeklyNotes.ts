@@ -8,6 +8,8 @@ import {
 import type { ISettings } from "src/settings";
 import { createConfirmationDialog } from "src/ui/modal";
 
+import { getNoteLeaf } from "./workspace";
+
 /**
  * Create a Weekly Note for a given date.
  */
@@ -17,15 +19,12 @@ export async function tryToCreateWeeklyNote(
   settings: ISettings,
   cb?: (file: TFile) => void
 ): Promise<void> {
-  const { workspace } = window.app;
   const { format } = getWeeklyNoteSettings();
   const filename = date.format(format);
 
   const createFile = async () => {
     const dailyNote = await createWeeklyNote(date);
-    const leaf = inNewSplit
-      ? workspace.splitActiveLeaf()
-      : workspace.getUnpinnedLeaf();
+    const leaf = getNoteLeaf(inNewSplit);
 
     await leaf.openFile(dailyNote, { active : true });
     cb?.(dailyNote);

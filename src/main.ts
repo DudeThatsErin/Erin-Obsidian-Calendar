@@ -1,5 +1,5 @@
-import type { Moment, WeekSpec } from "moment";
-import { App, Plugin, WorkspaceLeaf } from "obsidian";
+import type { WeekSpec } from "moment";
+import { Plugin, WorkspaceLeaf } from "obsidian";
 
 import { VIEW_TYPE_CALENDAR } from "./constants";
 import { settings } from "./ui/stores";
@@ -13,8 +13,6 @@ import { CalendarEmbed } from "./embed";
 
 declare global {
   interface Window {
-    app: App;
-    moment: () => Moment;
     _bundledLocaleWeekSpec?: WeekSpec;
   }
 }
@@ -38,14 +36,7 @@ export default class CalendarPlugin extends Plugin {
     this.addCommand({
       id: "show-calendar-view",
       name: "Open view",
-      checkCallback: (checking: boolean) => {
-        if (checking) {
-          return (
-            this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR).length === 0
-          );
-        }
-        this.initLeaf();
-      },
+      callback: () => void this.initLeaf(),
     });
 
     this.addCommand({
@@ -81,7 +72,11 @@ export default class CalendarPlugin extends Plugin {
 
   async initLeaf(): Promise<CalendarView> {
     const existingLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR)[0];
-    if (existingLeaf) return existingLeaf.view as CalendarView;
+    if (existingLeaf) {
+      // Reuse the user's existing placement instead of creating/moving a leaf.
+      this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+      return existingLeaf.view as CalendarView;
+    }
     const mode = (this.app.vault as unknown as { getConfig: (key: string) => string }).getConfig("defaultViewMode");
     const leaf = this.app.workspace.getRightLeaf(true);
     await leaf.setViewState({

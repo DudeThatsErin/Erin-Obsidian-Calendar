@@ -12,11 +12,22 @@ export interface ISettings {
   weekStart: IWeekStartOption;
   shouldConfirmBeforeCreate: boolean;
 
+  // Additional calendar links
+  showMonthlyNote: boolean;
+  showQuarterlyNote: boolean;
+  showYearlyNote: boolean;
+
   // Weekly Note settings
   showWeeklyNote: boolean;
   weeklyNoteFormat: string;
   weeklyNoteTemplate: string;
   weeklyNoteFolder: string;
+
+  // Notes associated through metadata or date tags
+  showDateTags: boolean;
+  useMetadataDates: boolean;
+  metadataDateProperty: string;
+  metadataDateFormat: string;
 
   localeOverride: ILocaleOverride;
 }
@@ -38,18 +49,35 @@ export const defaultSettings = Object.freeze({
   wordsPerDot: DEFAULT_WORDS_PER_DOT,
   weekdayLabelFormat: "ddd",
 
+  showMonthlyNote: false,
+  showQuarterlyNote: false,
+  showYearlyNote: false,
+
   showWeeklyNote: false,
   weeklyNoteFormat: "",
   weeklyNoteTemplate: "",
   weeklyNoteFolder: "",
 
+  showDateTags: true,
+  useMetadataDates: false,
+  metadataDateProperty: "date",
+  metadataDateFormat: "YYYY-MM-DD",
+
   localeOverride: "system-default",
 });
 
-export function appHasPeriodicNotesPluginLoaded(): boolean {
+export type PeriodicNotesInterval =
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly";
+
+export function appHasPeriodicNotesPluginLoaded(
+  interval: PeriodicNotesInterval = "weekly"
+): boolean {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const periodicNotes = (<any>window.app).plugins.getPlugin("periodic-notes");
-  return periodicNotes && periodicNotes.settings?.weekly?.enabled;
+  return Boolean(periodicNotes?.settings?.[interval]?.enabled);
 }
 
 export class CalendarSettingsTab extends PluginSettingTab {
@@ -84,6 +112,8 @@ export class CalendarSettingsTab extends PluginSettingTab {
     this.addWeekStartSetting();
     this.addConfirmCreateSetting();
     this.addShowWeeklyNoteSetting();
+    this.addPeriodicHeaderSettings();
+    this.addDateAssociationSettings();
 
     if (
       this.plugin.options.showWeeklyNote &&
@@ -190,6 +220,99 @@ export class CalendarSettingsTab extends PluginSettingTab {
           this.display(); // show/hide weekly settings
         });
       });
+  }
+
+  addPeriodicHeaderSettings(): void {
+    this.containerEl.createEl("h3", { text: "Periodic Note Links" });
+    this.addPeriodicHeaderSetting(
+      "showMonthlyNote",
+      "Open monthly note from calendar header",
+      "Make the displayed month clickable. Requires Monthly Notes to be enabled in Periodic Notes."
+    );
+    this.addPeriodicHeaderSetting(
+      "showQuarterlyNote",
+      "Open quarterly note from calendar header",
+      "Add a clickable quarter beside the month. Requires Quarterly Notes to be enabled in Periodic Notes."
+    );
+    this.addPeriodicHeaderSetting(
+      "showYearlyNote",
+      "Open yearly note from calendar header",
+      "Make the displayed year clickable. Requires Yearly Notes to be enabled in Periodic Notes."
+    );
+  }
+
+  addPeriodicHeaderSetting(
+    option: "showMonthlyNote" | "showQuarterlyNote" | "showYearlyNote",
+    name: string,
+    description: string
+  ): void {
+    new Setting(this.containerEl)
+      .setName(name)
+      .setDesc(description)
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.options[option]);
+        toggle.onChange(async (value) => {
+          await this.plugin.writeOptions(() => ({ [option]: value }));
+        });
+      });
+  }
+
+  addDateAssociationSettings(): void {
+    this.containerEl.createEl("h3", { text: "Date Associations" });
+    new Setting(this.containerEl)
+      .setName("Show date-tagged items")
+      .setDesc(
+        "Mark dates mentioned as exact #YYYY-MM-DD tags anywhere in the vault. Hover a marked date or use its context menu to see the matching notes."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.options.showDateTags);
+        toggle.onChange(async (value) => {
+          await this.plugin.writeOptions(() => ({ showDateTags: value }));
+        });
+      });
+
+    new Setting(this.containerEl)
+      .setName("Use frontmatter dates as daily notes")
+      .setDesc(
+        "Associate any note with a calendar day from a frontmatter property, useful for imported journals with more than one note per day."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.options.useMetadataDates);
+        toggle.onChange(async (value) => {
+          await this.plugin.writeOptions(() => ({ useMetadataDates: value }));
+          this.display();
+        });
+      });
+
+    if (this.plugin.options.useMetadataDates) {
+      new Setting(this.containerEl)
+        .setName("Frontmatter date property")
+        .setDesc("The frontmatter key to read, such as date or created.")
+        .addText((textfield) => {
+          textfield.setPlaceholder("date");
+          textfield.setValue(this.plugin.options.metadataDateProperty || "date");
+          textfield.onChange(async (value) => {
+            await this.plugin.writeOptions(() => ({
+              metadataDateProperty: value.trim() || "date",
+            }));
+          });
+        });
+
+      new Setting(this.containerEl)
+        .setName("Frontmatter date format")
+        .setDesc(
+          "Moment format for the property. ISO dates and ISO timestamps are accepted automatically."
+        )
+        .addText((textfield) => {
+          textfield.setPlaceholder("YYYY-MM-DD");
+          textfield.setValue(this.plugin.options.metadataDateFormat || "YYYY-MM-DD");
+          textfield.onChange(async (value) => {
+            await this.plugin.writeOptions(() => ({
+              metadataDateFormat: value.trim() || "YYYY-MM-DD",
+            }));
+          });
+        });
+    }
   }
 
   addWeeklyNoteFormatSetting(): void {

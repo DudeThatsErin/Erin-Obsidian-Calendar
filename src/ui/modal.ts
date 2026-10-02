@@ -1,4 +1,5 @@
 import { App, Modal } from "obsidian";
+import type { TFile } from "obsidian";
 
 interface IConfirmationDialogParams {
   cta: string;
@@ -42,4 +43,35 @@ export function createConfirmationDialog({
   title,
 }: IConfirmationDialogParams): void {
   new ConfirmationModal(window.app, { cta, onAccept, text, title }).open();
+}
+
+interface IFilePickerParams {
+  files: TFile[];
+  onChoose: (file: TFile) => Promise<void>;
+  text: string;
+  title: string;
+}
+
+class FilePickerModal extends Modal {
+  constructor(app: App, config: IFilePickerParams) {
+    super(app);
+
+    this.contentEl.createEl("h2", { text: config.title });
+    this.contentEl.createEl("p", { text: config.text });
+    const filesEl = this.contentEl.createDiv("erin-calendar-file-picker");
+
+    config.files.forEach((file) => {
+      filesEl
+        .createEl("button", { text: file.path })
+        .addEventListener("click", async () => {
+          await config.onChoose(file);
+          this.close();
+        });
+    });
+  }
+}
+
+/** Let the user choose when multiple imported notes map to one calendar day. */
+export function showFilePicker(config: IFilePickerParams): void {
+  new FilePickerModal(window.app, config).open();
 }

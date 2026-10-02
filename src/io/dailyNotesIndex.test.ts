@@ -6,6 +6,7 @@ let mockDailyNoteSettings = {
   format: "YYYY/MM/DD",
 };
 let mockMarkdownFiles: TFile[] = [];
+let mockFrontmatter: Record<string, Record<string, unknown>> = {};
 
 jest.mock(
   "obsidian",
@@ -28,7 +29,9 @@ jest.mock(
 
 import {
   getAdjacentDailyNote,
+  getAllDailyNotesIndex,
   getAllDailyNotesByPath,
+  getDailyNotesForDate,
   getDateFromDailyNoteFile,
 } from "./dailyNotesIndex";
 
@@ -42,10 +45,17 @@ beforeEach(() => {
     format: "YYYY/MM/DD",
   };
   mockMarkdownFiles = [];
+  mockFrontmatter = {};
   (window as unknown as { moment: typeof moment }).moment = moment;
   (window as unknown as {
-    app: { vault: { getMarkdownFiles: () => TFile[] } };
+    app: {
+      metadataCache: { getFileCache: (file: TFile) => { frontmatter: Record<string, unknown> } };
+      vault: { getMarkdownFiles: () => TFile[] };
+    };
   }).app = {
+    metadataCache: {
+      getFileCache: (note) => ({ frontmatter: mockFrontmatter[note.path] }),
+    },
     vault: {
       getMarkdownFiles: () => mockMarkdownFiles,
     },
@@ -76,6 +86,54 @@ describe("daily note paths", () => {
       "journal/2024/07/05.md",
       "journal/2024/07/06.md",
     ]);
+  });
+
+  it("finds one monthly-format note from any day in that month", () => {
+    mockDailyNoteSettings = { folder: "journal", format: "YYYYMM" };
+    const monthlyNote = file("journal/202403.md");
+    mockMarkdownFiles = [monthlyNote];
+
+    const notes = getAllDailyNotesIndex();
+    expect(
+      getDailyNotesForDate(moment("2024-03-21", "YYYY-MM-DD", true), notes)
+    ).toEqual([monthlyNote]);
+  });
+
+  it("accepts a quoted literal in a Daily Notes filename format", () => {
+    mockDailyNoteSettings = {
+      folder: "journal",
+      format: "YY.WW.MM.DD[ - ]dddd['s Daily Note]",
+    };
+    const note = file("journal/24.18.05.03 - Friday's Daily Note.md");
+    mockMarkdownFiles = [note];
+
+    expect(getDateFromDailyNoteFile(note)?.format("YYYY-MM-DD")).toBe(
+      "2024-05-03"
+    );
+    expect(
+      getDailyNotesForDate(moment("2024-05-03", "YYYY-MM-DD", true), getAllDailyNotesIndex())
+    ).toEqual([note]);
+  });
+
+  it("groups multiple imported notes by a configured frontmatter date", () => {
+    const first = file("imports/first.md");
+    const second = file("imports/second.md");
+    mockMarkdownFiles = [first, second];
+    mockFrontmatter = {
+      "imports/first.md": { created: "2020-01-15T10:00:00.000Z" },
+      "imports/second.md": { created: "2020-01-15" },
+    };
+
+    const index = getAllDailyNotesIndex({
+      metadataDateFormat: "YYYY-MM-DD",
+      metadataDateProperty: "created",
+      useMetadataDates: true,
+    });
+    expect(
+      getDailyNotesForDate(moment("2020-01-15", "YYYY-MM-DD", true), index).map(
+        (note) => note.path
+      )
+    ).toEqual(["imports/first.md", "imports/second.md"]);
   });
 });
 

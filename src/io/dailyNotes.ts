@@ -9,6 +9,8 @@ import {
 import type { ISettings } from "src/settings";
 import { createConfirmationDialog } from "src/ui/modal";
 
+import { getNoteLeaf } from "./workspace";
+
 const templateDateUnits: Record<string, unitOfTime.DurationConstructor> = {
   y: "y",
   q: "Q",
@@ -146,7 +148,6 @@ export async function tryToCreateDailyNote(
   settings: ISettings,
   cb?: (newFile: TFile) => void
 ): Promise<void> {
-  const { workspace } = window.app;
   const { format } = getDailyNoteSettings();
   const filename = date.format(format);
 
@@ -155,9 +156,7 @@ export async function tryToCreateDailyNote(
     if (!dailyNote) {
       return;
     }
-    const leaf = inNewSplit
-      ? workspace.splitActiveLeaf()
-      : workspace.getUnpinnedLeaf();
+    const leaf = getNoteLeaf(inNewSplit);
 
     await leaf.openFile(dailyNote, { active : true });
     cb?.(dailyNote);

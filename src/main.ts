@@ -23,11 +23,7 @@ export default class CalendarPlugin extends Plugin {
   public options: ISettings;
   private view: CalendarView;
 
-  onunload(): void {
-    this.app.workspace
-      .getLeavesOfType(VIEW_TYPE_CALENDAR)
-      .forEach((leaf) => leaf.detach());
-  }
+  onunload(): void {}
 
   async onload(): Promise<void> {
     this.register(

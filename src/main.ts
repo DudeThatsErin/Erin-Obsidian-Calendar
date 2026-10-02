@@ -79,14 +79,6 @@ export default class CalendarPlugin extends Plugin {
       ctx.addChild(new CalendarEmbed(el, this));
     });
 
-    if (this.app.workspace.layoutReady) {
-      void this.initLeaf();
-    } else {
-      this.registerEvent(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this.app.workspace as any).on("layout-ready", () => void this.initLeaf())
-      );
-    }
   }
 
   async initLeaf(): Promise<CalendarView> {

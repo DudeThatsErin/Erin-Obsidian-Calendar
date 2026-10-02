@@ -4609,14 +4609,6 @@ class CalendarPlugin extends require$$0.Plugin {
         this.registerMarkdownCodeBlockProcessor("erin-calendar", (_source, el, ctx) => {
             ctx.addChild(new CalendarEmbed(el, this));
         });
-        if (this.app.workspace.layoutReady) {
-            void this.initLeaf();
-        }
-        else {
-            this.registerEvent(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            this.app.workspace.on("layout-ready", () => void this.initLeaf()));
-        }
     }
     async initLeaf() {
         const existingLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR)[0];

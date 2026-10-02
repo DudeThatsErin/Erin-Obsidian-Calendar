@@ -2,7 +2,7 @@
   "id": "erin-calendar",
   "name": "Erin Calendar",
   "description": "Personal calendar view for daily notes",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "author": "Erin Skidds",
   "authorUrl": "https://github.com/DudeThatsErin",
   "isDesktopOnly": false,

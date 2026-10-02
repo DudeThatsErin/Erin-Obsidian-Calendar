@@ -64,8 +64,8 @@ export default class CalendarPlugin extends Plugin {
     await this.loadOptions();
 
     this.addSettingTab(new CalendarSettingsTab(this.app, this));
-    this.registerMarkdownCodeBlockProcessor("erin-calendar", (_source, el, ctx) => {
-      ctx.addChild(new CalendarEmbed(el, this));
+    this.registerMarkdownCodeBlockProcessor("erin-calendar", (source, el, ctx) => {
+      ctx.addChild(new CalendarEmbed(el, this, source));
     });
 
   }

@@ -5,6 +5,8 @@ import {
 } from "../io/dailyNotesIndex";
 import type { DailyNoteIndexOptions } from "../io/dailyNotesIndex";
 import { getDateFromWeeklyNoteFile } from "../io/weeklyNotesIndex";
+import { getWeeklyNoteDateUID } from "../io/weeklyNoteSettings";
+import type { ISettings } from "../settings";
 
 export const classList = (obj: Record<string, boolean>): string[] => {
   return Object.entries(obj)
@@ -46,7 +48,8 @@ export function partition(
  */
 export function getDateUIDFromFile(
   file: TFile | null,
-  dailyOptions: DailyNoteIndexOptions = {}
+  dailyOptions: DailyNoteIndexOptions = {},
+  calendarSettings?: ISettings
 ): string {
   if (!file) {
     return null;
@@ -57,8 +60,11 @@ export function getDateUIDFromFile(
     return getDateUID(date, "day");
   }
 
-  date = getDateFromWeeklyNoteFile(file);
+  date = getDateFromWeeklyNoteFile(file, calendarSettings);
   if (date) {
+    if (calendarSettings) {
+      return getWeeklyNoteDateUID(date, calendarSettings);
+    }
     return getDateUID(date, "week");
   }
   return null;

@@ -3,7 +3,6 @@ import { FileView, ItemView, Menu, Notice } from "obsidian";
 import type { HoverPopover, TFile, WorkspaceLeaf } from "obsidian";
 import {
   getDailyNoteSettings,
-  getWeeklyNoteSettings,
 } from "obsidian-daily-notes-interface";
 import { get } from "svelte/store";
 
@@ -13,7 +12,7 @@ import {
   getDailyNoteForDate,
   getDailyNotesForDate,
 } from "src/io/dailyNotesIndex";
-import type { DailyNoteIndexOptions } from "src/io/dailyNotesIndex";
+import type { DailyNoteIndexOptions, DailyNotesIndex } from "src/io/dailyNotesIndex";
 import {
   getExistingPeriodicNote,
   tryToCreatePeriodicNote,
@@ -22,11 +21,18 @@ import type { HeaderNoteGranularity } from "src/io/periodicNotes";
 import { tryToCreateDailyNote } from "src/io/dailyNotes";
 import { tryToCreateWeeklyNote } from "src/io/weeklyNotes";
 import { getDateFromWeeklyNoteFile, getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
+import type { WeeklyNotesIndex } from "src/io/weeklyNotesIndex";
+import {
+  formatWeeklyNoteDate,
+  resolveWeeklyNoteSettings,
+  withWeeklyMomentLocale,
+} from "src/io/weeklyNoteSettings";
 import { getNoteLeaf } from "src/io/workspace";
 import {
   appHasPeriodicNotesPluginLoaded,
 } from "src/settings";
 import type { ISettings, PeriodicNotesInterval } from "src/settings";
+import { resolveCalendarLocale } from "src/ui/isolatedCalendar/locale";
 
 import Calendar from "./ui/Calendar.svelte";
 import { showFileMenu } from "./ui/fileMenu";
@@ -55,6 +61,34 @@ const periodicIntervalForHeader: Record<
   quarter: "quarterly",
   year: "yearly",
 };
+
+/**
+ * The data an embedded calendar supplies when it opens a note. It lets one
+ * fenced block use its own settings and indexes without changing the sidebar.
+ */
+export interface CalendarActionContext {
+  settings: ISettings;
+  dailyNotesIndex: DailyNotesIndex | null;
+  weeklyNotesIndex: WeeklyNotesIndex | null;
+  onFileOpened?: (file: TFile, selectedDailyDate?: Moment) => void;
+}
+
+function getConfiguredWeekStart(date: Moment, settings: ISettings): Moment {
+  return withWeeklyMomentLocale(date, settings).startOf("week");
+}
+
+function getDailyIndexOptionsForSettings(
+  settings: ISettings | null
+): DailyNoteIndexOptions {
+  return {
+    locale: settings
+      ? resolveCalendarLocale(settings.localeOverride)
+      : undefined,
+    metadataDateFormat: settings?.metadataDateFormat,
+    metadataDateProperty: settings?.metadataDateProperty,
+    useMetadataDates: settings?.useMetadataDates,
+  };
+}
 
 export default class CalendarView extends ItemView {
   private calendar: Calendar;
@@ -197,11 +231,7 @@ export default class CalendarView extends ItemView {
   }
 
   private getDailyIndexOptions(): DailyNoteIndexOptions {
-    return {
-      metadataDateFormat: this.settings?.metadataDateFormat,
-      metadataDateProperty: this.settings?.metadataDateProperty,
-      useMetadataDates: this.settings?.useMetadataDates,
-    };
+    return getDailyIndexOptionsForSettings(this.settings);
   }
 
   private dismissHoverPopover(): void {
@@ -229,7 +259,11 @@ export default class CalendarView extends ItemView {
       return false;
     }
 
-    const note = getDailyNoteForDate(date, get(dailyNotes));
+    const note = getDailyNoteForDate(
+      date,
+      get(dailyNotes),
+      this.getDailyIndexOptions()
+    );
     const dateTagEntry = getDateTagEntries(date, get(dateTags))[0];
     const targetFile = note || dateTagEntry?.file;
     if (!targetFile) {
@@ -256,24 +290,28 @@ export default class CalendarView extends ItemView {
       this.dismissHoverPopover();
       return false;
     }
-    const note = getWeeklyNoteForDate(date, get(weeklyNotes));
+    const note = getWeeklyNoteForDate(date, get(weeklyNotes), this.settings);
     if (!note) {
       return false;
     }
 
-    const { format } = getWeeklyNoteSettings();
+    const { format } = resolveWeeklyNoteSettings(this.settings);
     this.app.workspace.trigger(
       "link-hover",
       this,
       targetEl,
-      date.format(format),
+      formatWeeklyNoteDate(date, format, this.settings),
       note.path
     );
     return true;
   }
 
   private onContextMenuDay(date: Moment, event: MouseEvent): boolean {
-    const notes = getDailyNotesForDate(date, get(dailyNotes));
+    const notes = getDailyNotesForDate(
+      date,
+      get(dailyNotes),
+      this.getDailyIndexOptions()
+    );
     const taggedEntries = getDateTagEntries(date, get(dateTags));
     if (!notes.length && !taggedEntries.length) {
       return false;
@@ -314,7 +352,7 @@ export default class CalendarView extends ItemView {
   }
 
   private onContextMenuWeek(date: Moment, event: MouseEvent): boolean {
-    const note = getWeeklyNoteForDate(date, get(weeklyNotes));
+    const note = getWeeklyNoteForDate(date, get(weeklyNotes), this.settings);
     if (!note) {
       return false;
     }
@@ -389,7 +427,7 @@ export default class CalendarView extends ItemView {
         return;
       }
 
-      date = getDateFromWeeklyNoteFile(activeLeaf.view.file);
+      date = getDateFromWeeklyNoteFile(activeLeaf.view.file, this.settings);
       if (date) {
         this.calendar.$set({ displayedMonth: date });
       }
@@ -399,7 +437,8 @@ export default class CalendarView extends ItemView {
   private async openNoteFile(
     file: TFile,
     inNewTab: boolean,
-    selectedDailyDate?: Moment
+    selectedDailyDate?: Moment,
+    actionContext?: CalendarActionContext
   ): Promise<void> {
     const { workspace } = this.app;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -407,42 +446,58 @@ export default class CalendarView extends ItemView {
     const leaf = getNoteLeaf(inNewTab);
     await leaf.openFile(file, { active: true, state: { mode } });
     activeFile.setFile(file, selectedDailyDate);
+    actionContext?.onFileOpened?.(file, selectedDailyDate);
     workspace.setActiveLeaf(leaf, { focus: true });
   }
 
   private async openDailyFile(
     file: TFile,
     date: Moment,
-    inNewTab: boolean
+    inNewTab: boolean,
+    actionContext?: CalendarActionContext
   ): Promise<void> {
-    await this.openNoteFile(file, inNewTab, date);
+    await this.openNoteFile(file, inNewTab, date, actionContext);
   }
 
   async openOrCreateWeeklyNote(
     date: Moment,
-    inNewTab: boolean
+    inNewTab: boolean,
+    actionContext?: CalendarActionContext
   ): Promise<void> {
-    const startOfWeek = date.clone().startOf("week");
-    const existingFile = getWeeklyNoteForDate(date, get(weeklyNotes));
+    const actionSettings = actionContext?.settings || this.settings;
+    const startOfWeek = getConfiguredWeekStart(date, actionSettings);
+    const existingFile = getWeeklyNoteForDate(
+      startOfWeek,
+      actionContext?.weeklyNotesIndex || get(weeklyNotes),
+      actionSettings
+    );
 
     if (!existingFile) {
-      await tryToCreateWeeklyNote(startOfWeek, inNewTab, this.settings, (file) => {
+      await tryToCreateWeeklyNote(startOfWeek, inNewTab, actionSettings, (file) => {
         activeFile.setFile(file);
+        actionContext?.onFileOpened?.(file);
       });
       return;
     }
 
-    await this.openNoteFile(existingFile, inNewTab);
+    await this.openNoteFile(existingFile, inNewTab, undefined, actionContext);
   }
 
   async openOrCreateDailyNote(
     date: Moment,
-    inNewTab: boolean
+    inNewTab: boolean,
+    actionContext?: CalendarActionContext
   ): Promise<void> {
-    const existingFiles = getDailyNotesForDate(date, get(dailyNotes));
+    const actionSettings = actionContext?.settings || this.settings;
+    const existingFiles = getDailyNotesForDate(
+      date,
+      actionContext?.dailyNotesIndex || get(dailyNotes),
+      getDailyIndexOptionsForSettings(actionSettings)
+    );
     if (!existingFiles.length) {
-      await tryToCreateDailyNote(date, inNewTab, this.settings, (dailyNote) => {
+      await tryToCreateDailyNote(date, inNewTab, actionSettings, (dailyNote) => {
         activeFile.setFile(dailyNote, date);
+        actionContext?.onFileOpened?.(dailyNote, date);
       });
       return;
     }
@@ -450,21 +505,24 @@ export default class CalendarView extends ItemView {
     if (existingFiles.length > 1) {
       showFilePicker({
         files: existingFiles,
-        onChoose: (file) => this.openDailyFile(file, date, inNewTab),
+        onChoose: (file) =>
+          this.openDailyFile(file, date, inNewTab, actionContext),
         text: "More than one note is associated with this date.",
         title: `Choose a note for ${date.format("LL")}`,
       });
       return;
     }
 
-    await this.openDailyFile(existingFiles[0], date, inNewTab);
+    await this.openDailyFile(existingFiles[0], date, inNewTab, actionContext);
   }
 
   async openOrCreatePeriodicNote(
     granularity: HeaderNoteGranularity,
     date: Moment,
-    inNewTab: boolean
+    inNewTab: boolean,
+    actionContext?: CalendarActionContext
   ): Promise<void> {
+    const actionSettings = actionContext?.settings || this.settings;
     const interval = periodicIntervalForHeader[granularity];
     if (!appHasPeriodicNotesPluginLoaded(interval)) {
       new Notice(
@@ -475,7 +533,7 @@ export default class CalendarView extends ItemView {
 
     const existingFile = getExistingPeriodicNote(granularity, date);
     if (existingFile) {
-      await this.openNoteFile(existingFile, inNewTab);
+      await this.openNoteFile(existingFile, inNewTab, undefined, actionContext);
       return;
     }
 
@@ -483,8 +541,11 @@ export default class CalendarView extends ItemView {
       granularity,
       date,
       inNewTab,
-      this.settings,
-      (file) => activeFile.setFile(file)
+      actionSettings,
+      (file) => {
+        activeFile.setFile(file);
+        actionContext?.onFileOpened?.(file);
+      }
     );
   }
 

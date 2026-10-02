@@ -9,3 +9,21 @@
 .settings-banner h4 {
   margin: 0;
 }
+
+.erin-calendar-embed-diagnostics {
+  background-color: var(--background-modifier-error);
+  border-left: 3px solid var(--text-error);
+  border-radius: 4px;
+  color: var(--text-normal);
+  margin-bottom: 0.75em;
+  padding: 0.75em 1em;
+}
+
+.erin-calendar-embed-diagnostics strong {
+  color: var(--text-error);
+}
+
+.erin-calendar-embed-diagnostics ul {
+  margin: 0.4em 0 0;
+  padding-left: 1.25em;
+}

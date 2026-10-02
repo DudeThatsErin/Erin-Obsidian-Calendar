@@ -1,9 +1,11 @@
 import type { Moment } from "moment";
 import type { TFile } from "obsidian";
 import { getDateUID } from "obsidian-daily-notes-interface";
+import type { Readable, Writable } from "svelte/store";
 import { get, writable } from "svelte/store";
 
 import { defaultSettings, ISettings } from "src/settings";
+import { resolveCalendarLocale } from "src/ui/isolatedCalendar/locale";
 
 import { getDateUIDFromFile } from "./utils";
 import {
@@ -18,22 +20,30 @@ import type { WeeklyNotesIndex } from "../io/weeklyNotesIndex";
 
 export const settings = writable<ISettings>(defaultSettings);
 
+/** A writable store whose contents can be refreshed from the vault. */
+export interface ReindexableStore<T> extends Writable<T> {
+  reindex: () => void;
+}
+
 function getDailyNoteIndexOptions(options: ISettings): DailyNoteIndexOptions {
   return {
+    locale: resolveCalendarLocale(options.localeOverride),
     metadataDateFormat: options.metadataDateFormat,
     metadataDateProperty: options.metadataDateProperty,
     useMetadataDates: options.useMetadataDates,
   };
 }
 
-function createDailyNotesStore() {
+export function createDailyNotesStore(
+  settingsStore: Readable<ISettings> = settings
+): ReindexableStore<DailyNotesIndex> {
   let hasError = false;
   const store = writable<DailyNotesIndex>(null);
   return {
     reindex: () => {
       try {
         const dailyNotes = getAllDailyNotesIndex(
-          getDailyNoteIndexOptions(get(settings))
+          getDailyNoteIndexOptions(get(settingsStore))
         );
         store.set(dailyNotes);
         hasError = false;
@@ -50,13 +60,15 @@ function createDailyNotesStore() {
   };
 }
 
-function createWeeklyNotesStore() {
+export function createWeeklyNotesStore(
+  settingsStore: Readable<ISettings> = settings
+): ReindexableStore<WeeklyNotesIndex> {
   let hasError = false;
   const store = writable<WeeklyNotesIndex>(null);
   return {
     reindex: () => {
       try {
-        const weeklyNotes = getAllWeeklyNotesIndex();
+        const weeklyNotes = getAllWeeklyNotesIndex(get(settingsStore));
         store.set(weeklyNotes);
         hasError = false;
       } catch (err) {
@@ -79,7 +91,11 @@ export interface IndexedDateTags extends DateTagIndex {
   version: number;
 }
 
-function createDateTagsStore() {
+export interface DateTagsStore extends Writable<IndexedDateTags> {
+  reindex: (enabled: boolean) => Promise<void>;
+}
+
+export function createDateTagsStore(): DateTagsStore {
   const store = writable<IndexedDateTags>({
     entriesByDate: {},
     version: 0,
@@ -114,8 +130,20 @@ function createDateTagsStore() {
 export const dateTags = createDateTagsStore();
 export const activeDailyDate = writable<Moment | null>(null);
 
-function createSelectedFileStore() {
-  const store = writable<string>(null);
+export interface SelectedFileStore extends Writable<string | null> {
+  setFile: (file: TFile | null, selectedDailyDate?: Moment) => void;
+}
+
+export interface CalendarSelection {
+  activeDailyDate: Writable<Moment | null>;
+  activeFile: SelectedFileStore;
+}
+
+export function createSelectedFileStore(
+  settingsStore: Readable<ISettings> = settings,
+  activeDailyDateStore: Writable<Moment | null> = activeDailyDate
+): SelectedFileStore {
+  const store = writable<string | null>(null);
 
   return {
     setFile: (file: TFile | null, selectedDailyDate?: Moment) => {
@@ -124,15 +152,21 @@ function createSelectedFileStore() {
         (file
           ? getDateFromCalendarDailyNote(
               file,
-              getDailyNoteIndexOptions(get(settings))
+              getDailyNoteIndexOptions(get(settingsStore))
             )
           : null);
 
-      activeDailyDate.set(dailyDate ? dailyDate.clone().startOf("day") : null);
+      activeDailyDateStore.set(
+        dailyDate ? dailyDate.clone().startOf("day") : null
+      );
       store.set(
         dailyDate
           ? getDateUID(dailyDate, "day")
-          : getDateUIDFromFile(file, getDailyNoteIndexOptions(get(settings)))
+          : getDateUIDFromFile(
+              file,
+              getDailyNoteIndexOptions(get(settingsStore)),
+              get(settingsStore)
+            )
       );
     },
     ...store,
@@ -140,3 +174,14 @@ function createSelectedFileStore() {
 }
 
 export const activeFile = createSelectedFileStore();
+
+/** Build selection stores that belong to one embedded calendar. */
+export function createCalendarSelection(
+  settingsStore: Readable<ISettings>
+): CalendarSelection {
+  const activeDailyDate = writable<Moment | null>(null);
+  return {
+    activeDailyDate,
+    activeFile: createSelectedFileStore(settingsStore, activeDailyDate),
+  };
+}

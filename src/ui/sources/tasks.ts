@@ -1,12 +1,16 @@
 import type { Moment } from "moment";
 import type { TFile } from "obsidian";
 import type { ICalendarSource, IDayMetadata, IDot } from "obsidian-calendar-ui";
+import type { Readable } from "svelte/store";
 import { get } from "svelte/store";
 
 import { getDailyNotesForDate } from "src/io/dailyNotesIndex";
 import { getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
+import type { DailyNotesIndex } from "src/io/dailyNotesIndex";
+import type { WeeklyNotesIndex } from "src/io/weeklyNotesIndex";
+import type { ISettings } from "src/settings";
 
-import { dailyNotes, weeklyNotes } from "../stores";
+import { dailyNotes, settings, weeklyNotes } from "../stores";
 
 export async function getNumberOfRemainingTasks(note: TFile): Promise<number> {
   if (!note) {
@@ -52,22 +56,29 @@ async function getDotsForNotes(notes: TFile[]): Promise<IDot[]> {
   ];
 }
 
-export const tasksSource: ICalendarSource = {
-  getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
-    const dots = await getDotsForNotes(
-      getDailyNotesForDate(date, get(dailyNotes))
-    );
-    return {
-      dots,
-    };
-  },
+export function createTasksSource(
+  dailyNotesStore: Readable<DailyNotesIndex>,
+  weeklyNotesStore: Readable<WeeklyNotesIndex>,
+  settingsStore: Readable<ISettings>
+): ICalendarSource {
+  return {
+    getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
+      const dots = await getDotsForNotes(
+        getDailyNotesForDate(date, get(dailyNotesStore))
+      );
+      return { dots };
+    },
 
-  getWeeklyMetadata: async (date: Moment): Promise<IDayMetadata> => {
-    const file = getWeeklyNoteForDate(date, get(weeklyNotes));
-    const dots = await getDotsForDailyNote(file);
+    getWeeklyMetadata: async (date: Moment): Promise<IDayMetadata> => {
+      const file = getWeeklyNoteForDate(
+        date,
+        get(weeklyNotesStore),
+        get(settingsStore)
+      );
+      const dots = await getDotsForDailyNote(file);
+      return { dots };
+    },
+  };
+}
 
-    return {
-      dots,
-    };
-  },
-};
+export const tasksSource = createTasksSource(dailyNotes, weeklyNotes, settings);

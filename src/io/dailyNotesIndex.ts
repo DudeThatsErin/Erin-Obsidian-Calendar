@@ -20,6 +20,8 @@ export interface DailyNoteIndexOptions {
   metadataDateFormat?: string;
   metadataDateProperty?: string;
   useMetadataDates?: boolean;
+  /** Moment locale used by this calendar when parsing textual date values. */
+  locale?: string;
 }
 
 export interface DailyNotesIndex {
@@ -65,13 +67,17 @@ function addDateEntry(
 }
 
 /** Parse a daily note path using the exact Daily Notes folder and format. */
-export function getDateFromDailyNoteFile(file: TFile): Moment | null {
-  return parseConfiguredNoteDate(file, dailyNoteSettings());
+export function getDateFromDailyNoteFile(
+  file: TFile,
+  options: DailyNoteIndexOptions = {}
+): Moment | null {
+  return parseConfiguredNoteDate(file, dailyNoteSettings(), options.locale);
 }
 
 function parseMetadataDateValue(
   value: unknown,
-  format: string
+  format: string,
+  locale?: string
 ): Moment | null {
   if (value instanceof Date || typeof value === "number") {
     const date = window.moment(value);
@@ -81,7 +87,9 @@ function parseMetadataDateValue(
     return null;
   }
 
-  const configured = window.moment(value, format, true);
+  const configured = locale
+    ? window.moment(value, format, locale, true)
+    : window.moment(value, format, true);
   if (configured.isValid()) {
     return configured;
   }
@@ -109,7 +117,7 @@ export function getDateFromDailyNoteMetadata(
   const values = Array.isArray(rawValue) ? rawValue : [rawValue];
 
   for (const value of values) {
-    const date = parseMetadataDateValue(value, format);
+    const date = parseMetadataDateValue(value, format, options.locale);
     if (date) {
       return date;
     }
@@ -124,7 +132,7 @@ export function getDateFromCalendarDailyNote(
 ): Moment | null {
   return (
     getDateFromDailyNoteMetadata(file, options) ||
-    getDateFromDailyNoteFile(file)
+    getDateFromDailyNoteFile(file, options)
   );
 }
 
@@ -145,7 +153,7 @@ export function getAllDailyNotesIndex(
   window.app.vault.getMarkdownFiles().forEach((file) => {
     index.filesByPath[file.path] = file;
 
-    const filenameDate = getDateFromDailyNoteFile(file);
+    const filenameDate = getDateFromDailyNoteFile(file, options);
     if (filenameDate) {
       addDateEntry(index, filenameDate, file);
     }
@@ -182,14 +190,16 @@ export function getAllDailyNotesByPath(): Record<string, TFile> {
  */
 export function getDailyNotesForDate(
   date: Moment,
-  index: DailyNotesIndex | null
+  index: DailyNotesIndex | null,
+  options: DailyNoteIndexOptions = {}
 ): TFile[] {
   if (!index) {
     return [];
   }
 
+  const configuredDate = options.locale ? date.clone().locale(options.locale) : date;
   const canonical = getConfiguredNoteForDate(
-    date,
+    configuredDate,
     dailyNoteSettings(),
     index.filesByPath
   );
@@ -199,9 +209,10 @@ export function getDailyNotesForDate(
 
 export function getDailyNoteForDate(
   date: Moment,
-  index: DailyNotesIndex | null
+  index: DailyNotesIndex | null,
+  options: DailyNoteIndexOptions = {}
 ): TFile | null {
-  return getDailyNotesForDate(date, index)[0] || null;
+  return getDailyNotesForDate(date, index, options)[0] || null;
 }
 
 export function getDailyNoteEntries(

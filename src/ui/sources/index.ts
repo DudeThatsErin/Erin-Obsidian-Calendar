@@ -1,5 +1,5 @@
-export { dateTagsSource } from "./dateTags";
-export { streakSource } from "./streak";
-export { customTagsSource } from "./tags";
-export { tasksSource } from "./tasks";
-export { wordCountSource } from "./wordCount";
+export { createDateTagsSource, dateTagsSource } from "./dateTags";
+export { createStreakSource, streakSource } from "./streak";
+export { createCustomTagsSource, customTagsSource } from "./tags";
+export { createTasksSource, tasksSource } from "./tasks";
+export { createWordCountSource, wordCountSource } from "./wordCount";

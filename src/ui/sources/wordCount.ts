@@ -1,19 +1,26 @@
 import type { Moment } from "moment";
 import type { TFile } from "obsidian";
 import type { ICalendarSource, IDayMetadata, IDot } from "obsidian-calendar-ui";
+import type { Readable } from "svelte/store";
 import { get } from "svelte/store";
 
 import { DEFAULT_WORDS_PER_DOT } from "src/constants";
 import { getDailyNotesForDate } from "src/io/dailyNotesIndex";
 import { getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
+import type { ISettings } from "src/settings";
 
+import type { DailyNotesIndex } from "src/io/dailyNotesIndex";
+import type { WeeklyNotesIndex } from "src/io/weeklyNotesIndex";
 import { dailyNotes, settings, weeklyNotes } from "../stores";
 import { clamp, getWordCount } from "../utils";
 
 const NUM_MAX_DOTS = 5;
 
-export async function getWordLengthAsDots(note: TFile): Promise<number> {
-  const { wordsPerDot = DEFAULT_WORDS_PER_DOT } = get(settings);
+export async function getWordLengthAsDots(
+  note: TFile,
+  settingsStore: Readable<ISettings> = settings
+): Promise<number> {
+  const { wordsPerDot = DEFAULT_WORDS_PER_DOT } = get(settingsStore);
   if (!note || wordsPerDot <= 0) {
     return 0;
   }
@@ -25,12 +32,13 @@ export async function getWordLengthAsDots(note: TFile): Promise<number> {
 }
 
 export async function getDotsForDailyNote(
-  dailyNote: TFile | null
+  dailyNote: TFile | null,
+  settingsStore: Readable<ISettings> = settings
 ): Promise<IDot[]> {
   if (!dailyNote) {
     return [];
   }
-  const numSolidDots = await getWordLengthAsDots(dailyNote);
+  const numSolidDots = await getWordLengthAsDots(dailyNote, settingsStore);
 
   const dots = [];
   for (let i = 0; i < numSolidDots; i++) {
@@ -42,12 +50,17 @@ export async function getDotsForDailyNote(
   return dots;
 }
 
-async function getDotsForNotes(notes: TFile[]): Promise<IDot[]> {
+async function getDotsForNotes(
+  notes: TFile[],
+  settingsStore: Readable<ISettings> = settings
+): Promise<IDot[]> {
   if (!notes.length) {
     return [];
   }
 
-  const wordCounts = await Promise.all(notes.map(getWordLengthAsDots));
+  const wordCounts = await Promise.all(
+    notes.map((note) => getWordLengthAsDots(note, settingsStore))
+  );
   const numSolidDots = clamp(
     wordCounts.reduce((total, count) => total + count, 0),
     0,
@@ -60,22 +73,34 @@ async function getDotsForNotes(notes: TFile[]): Promise<IDot[]> {
   }));
 }
 
-export const wordCountSource: ICalendarSource = {
-  getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
-    const dots = await getDotsForNotes(
-      getDailyNotesForDate(date, get(dailyNotes))
-    );
-    return {
-      dots,
-    };
-  },
+export function createWordCountSource(
+  dailyNotesStore: Readable<DailyNotesIndex>,
+  weeklyNotesStore: Readable<WeeklyNotesIndex>,
+  settingsStore: Readable<ISettings>
+): ICalendarSource {
+  return {
+    getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
+      const dots = await getDotsForNotes(
+        getDailyNotesForDate(date, get(dailyNotesStore)),
+        settingsStore
+      );
+      return { dots };
+    },
 
-  getWeeklyMetadata: async (date: Moment): Promise<IDayMetadata> => {
-    const file = getWeeklyNoteForDate(date, get(weeklyNotes));
-    const dots = await getDotsForDailyNote(file);
+    getWeeklyMetadata: async (date: Moment): Promise<IDayMetadata> => {
+      const file = getWeeklyNoteForDate(
+        date,
+        get(weeklyNotesStore),
+        get(settingsStore)
+      );
+      const dots = await getDotsForDailyNote(file, settingsStore);
+      return { dots };
+    },
+  };
+}
 
-    return {
-      dots,
-    };
-  },
-};
+export const wordCountSource = createWordCountSource(
+  dailyNotes,
+  weeklyNotes,
+  settings
+);

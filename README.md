@@ -27,14 +27,71 @@ downloads the release `main.js`, `styles.css`, and `manifest.json` files.
 
 ## Embed in a note
 
-Add an empty `erin-calendar` code block in Reading view:
+Add an `erin-calendar` code block in Reading view:
 
 ````markdown
 ```erin-calendar
 ```
 ````
 
-The embedded calendar uses the same settings as the sidebar calendar.
+An empty block follows the sidebar Calendar settings. To customize just one
+embedded calendar, put YAML settings inside its code block. Those values apply
+only to that block—they are not saved and do not change the sidebar or any
+other calendar. Settings omitted from the block continue to follow the sidebar
+setting, including later changes to it.
+
+For example, this calendar starts on Monday, uses single-letter weekday
+headings, has no date-tag markers, and creates notes without confirmation:
+
+````markdown
+```erin-calendar
+weekdayLabelFormat: "d"
+weekStart: "monday"
+shouldConfirmBeforeCreate: false
+showDateTags: false
+```
+````
+
+Every Calendar setting can be supplied this way. Copy the fields you want from
+this reference; all values are optional. Quote Moment formats and paths so
+YAML reads them as text.
+
+````markdown
+```erin-calendar
+# Display
+wordsPerDot: 250
+weekdayLabelFormat: "ddd"
+weekStart: "locale" # locale, sunday, monday, tuesday, wednesday, thursday, friday, saturday
+localeOverride: "system-default"
+
+# Opening and creating notes
+shouldConfirmBeforeCreate: true
+
+# Header and week-note links
+showWeeklyNote: false
+showMonthlyNote: false
+showQuarterlyNote: false
+showYearlyNote: false
+weeklyNoteFormat: "gggg-[W]ww"
+weeklyNoteTemplate: "Templates/Weekly note.md"
+weeklyNoteFolder: "Calendar/Weeks"
+
+# Date associations
+showDateTags: true
+useMetadataDates: false
+metadataDateProperty: "date"
+metadataDateFormat: "YYYY-MM-DD"
+```
+````
+
+For the three weekly-note path settings, an empty string keeps inheriting the
+configured Calendar or Periodic Notes value. If a block contains an unknown or
+invalid setting, the calendar still renders and shows an explanation beneath
+that block.
+
+Use lowercase `gggg` and `ww` when weekly filenames should follow the block's
+`weekStart` choice. Uppercase `GGGG` and `WW` are ISO week tokens and always
+use Monday-based week numbering.
 
 ## Improvements in this fork
 
@@ -53,6 +110,9 @@ personal workflow improvements:
   surfaced from the calendar, including a choice when more than one note maps
   to the same day.
 - Hover previews are dismissed cleanly when leaving a calendar day.
+- Each embedded calendar can now use its own complete set of Calendar
+  settings, including locale and first-day-of-week, without changing the
+  sidebar or another embedded calendar.
 
 Some of these additions depend on Obsidian's Daily Notes or Periodic Notes
 plugins and their corresponding settings.

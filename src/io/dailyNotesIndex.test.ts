@@ -1,4 +1,5 @@
 import moment, { Moment } from "moment";
+import "moment/locale/fr";
 import type { TFile } from "obsidian";
 
 let mockDailyNoteSettings = {
@@ -47,6 +48,7 @@ beforeEach(() => {
   mockMarkdownFiles = [];
   mockFrontmatter = {};
   (window as unknown as { moment: typeof moment }).moment = moment;
+  moment.locale("en");
   (window as unknown as {
     app: {
       metadataCache: { getFileCache: (file: TFile) => { frontmatter: Record<string, unknown> } };
@@ -113,6 +115,37 @@ describe("daily note paths", () => {
     expect(
       getDailyNotesForDate(moment("2024-05-03", "YYYY-MM-DD", true), getAllDailyNotesIndex())
     ).toEqual([note]);
+  });
+
+  it("uses the calendar locale for textual filenames and frontmatter dates", () => {
+    mockDailyNoteSettings = { folder: "journal", format: "D MMMM YYYY" };
+    const filenameNote = file("journal/3 janvier 2021.md");
+    const metadataNote = file("imports/metadata.md");
+    mockMarkdownFiles = [filenameNote, metadataNote];
+    mockFrontmatter = {
+      "imports/metadata.md": { published: "3 janvier 2021" },
+    };
+
+    expect(getDateFromDailyNoteFile(filenameNote)).toBeNull();
+    expect(
+      getDateFromDailyNoteFile(filenameNote, { locale: "fr" })?.format(
+        "YYYY-MM-DD"
+      )
+    ).toBe("2021-01-03");
+
+    const index = getAllDailyNotesIndex({
+      locale: "fr",
+      metadataDateFormat: "D MMMM YYYY",
+      metadataDateProperty: "published",
+      useMetadataDates: true,
+    });
+    expect(
+      getDailyNotesForDate(
+        moment("2021-01-03", "YYYY-MM-DD", true),
+        index,
+        { locale: "fr" }
+      ).map((note) => note.path)
+    ).toEqual(["journal/3 janvier 2021.md", "imports/metadata.md"]);
   });
 
   it("groups multiple imported notes by a configured frontmatter date", () => {

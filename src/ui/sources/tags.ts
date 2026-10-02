@@ -2,13 +2,17 @@ import type { Moment } from "moment";
 import { parseFrontMatterTags } from "obsidian";
 import type { TFile } from "obsidian";
 import type { ICalendarSource, IDayMetadata } from "obsidian-calendar-ui";
+import type { Readable } from "svelte/store";
 import { get } from "svelte/store";
 
 import { getDailyNotesForDate } from "src/io/dailyNotesIndex";
 import { getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
 import { partition } from "src/ui/utils";
+import type { DailyNotesIndex } from "src/io/dailyNotesIndex";
+import type { WeeklyNotesIndex } from "src/io/weeklyNotesIndex";
+import type { ISettings } from "src/settings";
 
-import { dailyNotes, weeklyNotes } from "../stores";
+import { dailyNotes, settings, weeklyNotes } from "../stores";
 
 function getNoteTags(note: TFile | null): string[] {
   if (!note) {
@@ -56,19 +60,35 @@ function getFormattedTagAttributes(notes: TFile[]): Record<string, string> {
   return attrs;
 }
 
-export const customTagsSource: ICalendarSource = {
-  getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
-    const files = getDailyNotesForDate(date, get(dailyNotes));
-    return {
-      dataAttributes: getFormattedTagAttributes(files),
-      dots: [],
-    };
-  },
-  getWeeklyMetadata: async (date: Moment): Promise<IDayMetadata> => {
-    const file = getWeeklyNoteForDate(date, get(weeklyNotes));
-    return {
-      dataAttributes: getFormattedTagAttributes(file ? [file] : []),
-      dots: [],
-    };
-  },
-};
+export function createCustomTagsSource(
+  dailyNotesStore: Readable<DailyNotesIndex>,
+  weeklyNotesStore: Readable<WeeklyNotesIndex>,
+  settingsStore: Readable<ISettings>
+): ICalendarSource {
+  return {
+    getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
+      const files = getDailyNotesForDate(date, get(dailyNotesStore));
+      return {
+        dataAttributes: getFormattedTagAttributes(files),
+        dots: [],
+      };
+    },
+    getWeeklyMetadata: async (date: Moment): Promise<IDayMetadata> => {
+      const file = getWeeklyNoteForDate(
+        date,
+        get(weeklyNotesStore),
+        get(settingsStore)
+      );
+      return {
+        dataAttributes: getFormattedTagAttributes(file ? [file] : []),
+        dots: [],
+      };
+    },
+  };
+}
+
+export const customTagsSource = createCustomTagsSource(
+  dailyNotes,
+  weeklyNotes,
+  settings
+);

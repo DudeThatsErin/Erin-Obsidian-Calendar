@@ -1,0 +1,58 @@
+<script lang="ts">
+  export let onClick: () => void;
+  export let tooltip: string;
+  export let direction: "left" | "right";
+
+  let isMobile = Boolean(
+    (window.app as unknown as { isMobile?: boolean }).isMobile
+  );
+</script>
+
+<button
+  class="arrow"
+  class:is-mobile={isMobile}
+  class:right={direction === "right"}
+  on:click={onClick}
+  aria-label={tooltip}
+  type="button"
+>
+  <svg
+    focusable="false"
+    role="img"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 320 512"
+  >
+    <path
+      fill="currentColor"
+      d="M34.52 239.03L228.87 44.69c9.37-9.37 24.57-9.37 33.94 0l22.67 22.67c9.36 9.36 9.37 24.52.04 33.9L131.49 256l154.02 154.75c9.34 9.38 9.32 24.54-.04 33.9l-22.67 22.67c-9.37 9.37-24.57 9.37-33.94 0L34.52 272.97c-9.37-9.37-9.37-24.57 0-33.94z"
+    />
+  </svg>
+</button>
+
+<style>
+  .arrow {
+    align-items: center;
+    background: none;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    padding: 0;
+    width: 24px;
+  }
+
+  .arrow.is-mobile {
+    width: 32px;
+  }
+
+  .right {
+    transform: rotate(180deg);
+  }
+
+  .arrow svg {
+    color: var(--color-arrow);
+    height: 16px;
+    width: 16px;
+  }
+</style>

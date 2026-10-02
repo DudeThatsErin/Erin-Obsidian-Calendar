@@ -9,6 +9,7 @@ const TRIGGER_ON_OPEN = "calendar:open";
 
 //#region src/constants.ts
 const DEFAULT_DAILY_NOTE_FORMAT = "YYYY-MM-DD";
+const DEFAULT_WEEKLY_NOTE_FORMAT = "gggg-[W]ww";
 //#endregion
 //#region src/settings.ts
 function validateString(value) {
@@ -164,7 +165,7 @@ async function getTemplateInfo(template) {
 * dateUID is a way of weekly identifying daily/weekly/monthly notes.
 * They are prefixed with the granularity to avoid ambiguity.
 */
-function getDateUID$1(date, granularity = "day") {
+function getDateUID(date, granularity = "day") {
 	return `${granularity}-${date.clone().startOf(granularity).format()}`;
 }
 /**
@@ -374,31 +375,42 @@ function createPeriodicNote(granularity, date) {
 	}[granularity](date);
 }
 
-function noop$1() { }
-function run$1(fn) {
+function noop() { }
+function assign(tar, src) {
+    // @ts-ignore
+    for (const k in src)
+        tar[k] = src[k];
+    return tar;
+}
+// Adapted from https://github.com/then/is-promise/blob/master/index.js
+// Distributed under MIT License https://github.com/then/is-promise/blob/master/LICENSE
+function is_promise(value) {
+    return !!value && (typeof value === 'object' || typeof value === 'function') && typeof value.then === 'function';
+}
+function run(fn) {
     return fn();
 }
-function blank_object$1() {
+function blank_object() {
     return Object.create(null);
 }
-function run_all$1(fns) {
-    fns.forEach(run$1);
+function run_all(fns) {
+    fns.forEach(run);
 }
-function is_function$1(thing) {
+function is_function(thing) {
     return typeof thing === 'function';
 }
-function safe_not_equal$1(a, b) {
+function safe_not_equal(a, b) {
     return a != a ? b == b : a !== b || ((a && typeof a === 'object') || typeof a === 'function');
 }
-function not_equal$1(a, b) {
+function not_equal(a, b) {
     return a != a ? b == b : a !== b;
 }
-function is_empty$1(obj) {
+function is_empty(obj) {
     return Object.keys(obj).length === 0;
 }
 function subscribe(store, ...callbacks) {
     if (store == null) {
-        return noop$1;
+        return noop;
     }
     const unsub = store.subscribe(...callbacks);
     return unsub.unsubscribe ? () => unsub.unsubscribe() : unsub;
@@ -408,16 +420,63 @@ function get_store_value(store) {
     subscribe(store, _ => value = _)();
     return value;
 }
-function component_subscribe(component, store, callback) {
-    component.$$.on_destroy.push(subscribe(store, callback));
+function create_slot(definition, ctx, $$scope, fn) {
+    if (definition) {
+        const slot_ctx = get_slot_context(definition, ctx, $$scope, fn);
+        return definition[0](slot_ctx);
+    }
 }
-function append$1(target, node) {
+function get_slot_context(definition, ctx, $$scope, fn) {
+    return definition[1] && fn
+        ? assign($$scope.ctx.slice(), definition[1](fn(ctx)))
+        : $$scope.ctx;
+}
+function get_slot_changes(definition, $$scope, dirty, fn) {
+    if (definition[2] && fn) {
+        const lets = definition[2](fn(dirty));
+        if ($$scope.dirty === undefined) {
+            return lets;
+        }
+        if (typeof lets === 'object') {
+            const merged = [];
+            const len = Math.max($$scope.dirty.length, lets.length);
+            for (let i = 0; i < len; i += 1) {
+                merged[i] = $$scope.dirty[i] | lets[i];
+            }
+            return merged;
+        }
+        return $$scope.dirty | lets;
+    }
+    return $$scope.dirty;
+}
+function update_slot_base(slot, slot_definition, ctx, $$scope, slot_changes, get_slot_context_fn) {
+    if (slot_changes) {
+        const slot_context = get_slot_context(slot_definition, ctx, $$scope, get_slot_context_fn);
+        slot.p(slot_context, slot_changes);
+    }
+}
+function get_all_dirty_from_scope($$scope) {
+    if ($$scope.ctx.length > 32) {
+        const dirty = [];
+        const length = $$scope.ctx.length / 32;
+        for (let i = 0; i < length; i++) {
+            dirty[i] = -1;
+        }
+        return dirty;
+    }
+    return -1;
+}
+function null_to_empty(value) {
+    return value == null ? '' : value;
+}
+const contenteditable_truthy_values = ['', true, 1, 'true', 'contenteditable'];
+function append(target, node) {
     target.appendChild(node);
 }
 function append_styles(target, style_sheet_id, styles) {
     const append_styles_to = get_root_for_style(target);
     if (!append_styles_to.getElementById(style_sheet_id)) {
-        const style = element$1('style');
+        const style = element('style');
         style.id = style_sheet_id;
         style.textContent = styles;
         append_stylesheet(append_styles_to, style);
@@ -433,48 +492,112 @@ function get_root_for_style(node) {
     return node.ownerDocument;
 }
 function append_stylesheet(node, style) {
-    append$1(node.head || node, style);
+    append(node.head || node, style);
     return style.sheet;
 }
-function insert$1(target, node, anchor) {
+function insert(target, node, anchor) {
     target.insertBefore(node, anchor || null);
 }
-function detach$1(node) {
+function detach(node) {
     if (node.parentNode) {
         node.parentNode.removeChild(node);
     }
 }
-function element$1(name) {
+function destroy_each(iterations, detaching) {
+    for (let i = 0; i < iterations.length; i += 1) {
+        if (iterations[i])
+            iterations[i].d(detaching);
+    }
+}
+function element(name) {
     return document.createElement(name);
 }
-function text$1(data) {
+function svg_element(name) {
+    return document.createElementNS('http://www.w3.org/2000/svg', name);
+}
+function text(data) {
     return document.createTextNode(data);
 }
-function space$1() {
-    return text$1(' ');
+function space() {
+    return text(' ');
 }
-function listen$1(node, event, handler, options) {
+function empty() {
+    return text('');
+}
+function listen(node, event, handler, options) {
     node.addEventListener(event, handler, options);
     return () => node.removeEventListener(event, handler, options);
 }
-function attr$1(node, attribute, value) {
+function attr(node, attribute, value) {
     if (value == null)
         node.removeAttribute(attribute);
     else if (node.getAttribute(attribute) !== value)
         node.setAttribute(attribute, value);
 }
-function children$1(element) {
+/**
+ * List of attributes that should always be set through the attr method,
+ * because updating them through the property setter doesn't work reliably.
+ * In the example of `width`/`height`, the problem is that the setter only
+ * accepts numeric values, but the attribute can also be set to a string like `50%`.
+ * If this list becomes too big, rethink this approach.
+ */
+const always_set_through_set_attribute = ['width', 'height'];
+function set_attributes(node, attributes) {
+    // @ts-ignore
+    const descriptors = Object.getOwnPropertyDescriptors(node.__proto__);
+    for (const key in attributes) {
+        if (attributes[key] == null) {
+            node.removeAttribute(key);
+        }
+        else if (key === 'style') {
+            node.style.cssText = attributes[key];
+        }
+        else if (key === '__value') {
+            node.value = node[key] = attributes[key];
+        }
+        else if (descriptors[key] && descriptors[key].set && always_set_through_set_attribute.indexOf(key) === -1) {
+            node[key] = attributes[key];
+        }
+        else {
+            attr(node, key, attributes[key]);
+        }
+    }
+}
+function children(element) {
     return Array.from(element.childNodes);
 }
-
-let current_component$1;
-function set_current_component$1(component) {
-    current_component$1 = component;
+function set_data(text, data) {
+    data = '' + data;
+    if (text.data === data)
+        return;
+    text.data = data;
 }
-function get_current_component$1() {
-    if (!current_component$1)
+function set_data_contenteditable(text, data) {
+    data = '' + data;
+    if (text.wholeText === data)
+        return;
+    text.data = data;
+}
+function set_data_maybe_contenteditable(text, data, attr_value) {
+    if (~contenteditable_truthy_values.indexOf(attr_value)) {
+        set_data_contenteditable(text, data);
+    }
+    else {
+        set_data(text, data);
+    }
+}
+function toggle_class(element, name, toggle) {
+    element.classList[toggle ? 'add' : 'remove'](name);
+}
+
+let current_component;
+function set_current_component(component) {
+    current_component = component;
+}
+function get_current_component() {
+    if (!current_component)
         throw new Error('Function called outside component initialization');
-    return current_component$1;
+    return current_component;
 }
 /**
  * Schedules a callback to run immediately after the component has been updated.
@@ -482,7 +605,7 @@ function get_current_component$1() {
  * The first time the callback runs will be after the initial `onMount`
  */
 function afterUpdate(fn) {
-    get_current_component$1().$$.after_update.push(fn);
+    get_current_component().$$.after_update.push(fn);
 }
 /**
  * Schedules a callback to run immediately before the component is unmounted.
@@ -493,26 +616,26 @@ function afterUpdate(fn) {
  * https://svelte.dev/docs#run-time-svelte-ondestroy
  */
 function onDestroy(fn) {
-    get_current_component$1().$$.on_destroy.push(fn);
+    get_current_component().$$.on_destroy.push(fn);
 }
 
-const dirty_components$1 = [];
-const binding_callbacks$1 = [];
-let render_callbacks$1 = [];
-const flush_callbacks$1 = [];
-const resolved_promise$1 = /* @__PURE__ */ Promise.resolve();
-let update_scheduled$1 = false;
-function schedule_update$1() {
-    if (!update_scheduled$1) {
-        update_scheduled$1 = true;
-        resolved_promise$1.then(flush$1);
+const dirty_components = [];
+const binding_callbacks = [];
+let render_callbacks = [];
+const flush_callbacks = [];
+const resolved_promise = /* @__PURE__ */ Promise.resolve();
+let update_scheduled = false;
+function schedule_update() {
+    if (!update_scheduled) {
+        update_scheduled = true;
+        resolved_promise.then(flush);
     }
 }
-function add_render_callback$1(fn) {
-    render_callbacks$1.push(fn);
+function add_render_callback(fn) {
+    render_callbacks.push(fn);
 }
 function add_flush_callback(fn) {
-    flush_callbacks$1.push(fn);
+    flush_callbacks.push(fn);
 }
 // flush() calls callbacks in this order:
 // 1. All beforeUpdate callbacks, in order: parents before children
@@ -532,66 +655,66 @@ function add_flush_callback(fn) {
 // 3. During afterUpdate, any updated components will NOT have their afterUpdate
 //    callback called a second time; the seen_callbacks set, outside the flush()
 //    function, guarantees this behavior.
-const seen_callbacks$1 = new Set();
+const seen_callbacks = new Set();
 let flushidx = 0; // Do *not* move this inside the flush() function
-function flush$1() {
+function flush() {
     // Do not reenter flush while dirty components are updated, as this can
     // result in an infinite loop. Instead, let the inner flush handle it.
     // Reentrancy is ok afterwards for bindings etc.
     if (flushidx !== 0) {
         return;
     }
-    const saved_component = current_component$1;
+    const saved_component = current_component;
     do {
         // first, call beforeUpdate functions
         // and update components
         try {
-            while (flushidx < dirty_components$1.length) {
-                const component = dirty_components$1[flushidx];
+            while (flushidx < dirty_components.length) {
+                const component = dirty_components[flushidx];
                 flushidx++;
-                set_current_component$1(component);
-                update$1(component.$$);
+                set_current_component(component);
+                update(component.$$);
             }
         }
         catch (e) {
             // reset dirty state to not end up in a deadlocked state and then rethrow
-            dirty_components$1.length = 0;
+            dirty_components.length = 0;
             flushidx = 0;
             throw e;
         }
-        set_current_component$1(null);
-        dirty_components$1.length = 0;
+        set_current_component(null);
+        dirty_components.length = 0;
         flushidx = 0;
-        while (binding_callbacks$1.length)
-            binding_callbacks$1.pop()();
+        while (binding_callbacks.length)
+            binding_callbacks.pop()();
         // then, once components are updated, call
         // afterUpdate functions. This may cause
         // subsequent updates...
-        for (let i = 0; i < render_callbacks$1.length; i += 1) {
-            const callback = render_callbacks$1[i];
-            if (!seen_callbacks$1.has(callback)) {
+        for (let i = 0; i < render_callbacks.length; i += 1) {
+            const callback = render_callbacks[i];
+            if (!seen_callbacks.has(callback)) {
                 // ...so guard against infinite loops
-                seen_callbacks$1.add(callback);
+                seen_callbacks.add(callback);
                 callback();
             }
         }
-        render_callbacks$1.length = 0;
-    } while (dirty_components$1.length);
-    while (flush_callbacks$1.length) {
-        flush_callbacks$1.pop()();
+        render_callbacks.length = 0;
+    } while (dirty_components.length);
+    while (flush_callbacks.length) {
+        flush_callbacks.pop()();
     }
-    update_scheduled$1 = false;
-    seen_callbacks$1.clear();
-    set_current_component$1(saved_component);
+    update_scheduled = false;
+    seen_callbacks.clear();
+    set_current_component(saved_component);
 }
-function update$1($$) {
+function update($$) {
     if ($$.fragment !== null) {
         $$.update();
-        run_all$1($$.before_update);
+        run_all($$.before_update);
         const dirty = $$.dirty;
         $$.dirty = [-1];
         $$.fragment && $$.fragment.p($$.ctx, dirty);
-        $$.after_update.forEach(add_render_callback$1);
+        $$.after_update.forEach(add_render_callback);
     }
 }
 /**
@@ -600,38 +723,38 @@ function update$1($$) {
 function flush_render_callbacks(fns) {
     const filtered = [];
     const targets = [];
-    render_callbacks$1.forEach((c) => fns.indexOf(c) === -1 ? filtered.push(c) : targets.push(c));
+    render_callbacks.forEach((c) => fns.indexOf(c) === -1 ? filtered.push(c) : targets.push(c));
     targets.forEach((c) => c());
-    render_callbacks$1 = filtered;
+    render_callbacks = filtered;
 }
-const outroing$1 = new Set();
-let outros$1;
-function group_outros$1() {
-    outros$1 = {
+const outroing = new Set();
+let outros;
+function group_outros() {
+    outros = {
         r: 0,
         c: [],
-        p: outros$1 // parent group
+        p: outros // parent group
     };
 }
-function check_outros$1() {
-    if (!outros$1.r) {
-        run_all$1(outros$1.c);
+function check_outros() {
+    if (!outros.r) {
+        run_all(outros.c);
     }
-    outros$1 = outros$1.p;
+    outros = outros.p;
 }
-function transition_in$1(block, local) {
+function transition_in(block, local) {
     if (block && block.i) {
-        outroing$1.delete(block);
+        outroing.delete(block);
         block.i(local);
     }
 }
-function transition_out$1(block, local, detach, callback) {
+function transition_out(block, local, detach, callback) {
     if (block && block.o) {
-        if (outroing$1.has(block))
+        if (outroing.has(block))
             return;
-        outroing$1.add(block);
-        outros$1.c.push(() => {
-            outroing$1.delete(block);
+        outroing.add(block);
+        outros.c.push(() => {
+            outroing.delete(block);
             if (callback) {
                 if (detach)
                     block.d(1);
@@ -645,6 +768,208 @@ function transition_out$1(block, local, detach, callback) {
     }
 }
 
+function handle_promise(promise, info) {
+    const token = info.token = {};
+    function update(type, index, key, value) {
+        if (info.token !== token)
+            return;
+        info.resolved = value;
+        let child_ctx = info.ctx;
+        if (key !== undefined) {
+            child_ctx = child_ctx.slice();
+            child_ctx[key] = value;
+        }
+        const block = type && (info.current = type)(child_ctx);
+        let needs_flush = false;
+        if (info.block) {
+            if (info.blocks) {
+                info.blocks.forEach((block, i) => {
+                    if (i !== index && block) {
+                        group_outros();
+                        transition_out(block, 1, 1, () => {
+                            if (info.blocks[i] === block) {
+                                info.blocks[i] = null;
+                            }
+                        });
+                        check_outros();
+                    }
+                });
+            }
+            else {
+                info.block.d(1);
+            }
+            block.c();
+            transition_in(block, 1);
+            block.m(info.mount(), info.anchor);
+            needs_flush = true;
+        }
+        info.block = block;
+        if (info.blocks)
+            info.blocks[index] = block;
+        if (needs_flush) {
+            flush();
+        }
+    }
+    if (is_promise(promise)) {
+        const current_component = get_current_component();
+        promise.then(value => {
+            set_current_component(current_component);
+            update(info.then, 1, info.value, value);
+            set_current_component(null);
+        }, error => {
+            set_current_component(current_component);
+            update(info.catch, 2, info.error, error);
+            set_current_component(null);
+            if (!info.hasCatch) {
+                throw error;
+            }
+        });
+        // if we previously had a then/catch block, destroy it
+        if (info.current !== info.pending) {
+            update(info.pending, 0);
+            return true;
+        }
+    }
+    else {
+        if (info.current !== info.then) {
+            update(info.then, 1, info.value, promise);
+            return true;
+        }
+        info.resolved = promise;
+    }
+}
+function update_await_block_branch(info, ctx, dirty) {
+    const child_ctx = ctx.slice();
+    const { resolved } = info;
+    if (info.current === info.then) {
+        child_ctx[info.value] = resolved;
+    }
+    if (info.current === info.catch) {
+        child_ctx[info.error] = resolved;
+    }
+    info.block.p(child_ctx, dirty);
+}
+function outro_and_destroy_block(block, lookup) {
+    transition_out(block, 1, 1, () => {
+        lookup.delete(block.key);
+    });
+}
+function update_keyed_each(old_blocks, dirty, get_key, dynamic, ctx, list, lookup, node, destroy, create_each_block, next, get_context) {
+    let o = old_blocks.length;
+    let n = list.length;
+    let i = o;
+    const old_indexes = {};
+    while (i--)
+        old_indexes[old_blocks[i].key] = i;
+    const new_blocks = [];
+    const new_lookup = new Map();
+    const deltas = new Map();
+    const updates = [];
+    i = n;
+    while (i--) {
+        const child_ctx = get_context(ctx, list, i);
+        const key = get_key(child_ctx);
+        let block = lookup.get(key);
+        if (!block) {
+            block = create_each_block(key, child_ctx);
+            block.c();
+        }
+        else {
+            // defer updates until all the DOM shuffling is done
+            updates.push(() => block.p(child_ctx, dirty));
+        }
+        new_lookup.set(key, new_blocks[i] = block);
+        if (key in old_indexes)
+            deltas.set(key, Math.abs(i - old_indexes[key]));
+    }
+    const will_move = new Set();
+    const did_move = new Set();
+    function insert(block) {
+        transition_in(block, 1);
+        block.m(node, next);
+        lookup.set(block.key, block);
+        next = block.first;
+        n--;
+    }
+    while (o && n) {
+        const new_block = new_blocks[n - 1];
+        const old_block = old_blocks[o - 1];
+        const new_key = new_block.key;
+        const old_key = old_block.key;
+        if (new_block === old_block) {
+            // do nothing
+            next = new_block.first;
+            o--;
+            n--;
+        }
+        else if (!new_lookup.has(old_key)) {
+            // remove old block
+            destroy(old_block, lookup);
+            o--;
+        }
+        else if (!lookup.has(new_key) || will_move.has(new_key)) {
+            insert(new_block);
+        }
+        else if (did_move.has(old_key)) {
+            o--;
+        }
+        else if (deltas.get(new_key) > deltas.get(old_key)) {
+            did_move.add(new_key);
+            insert(new_block);
+        }
+        else {
+            will_move.add(old_key);
+            o--;
+        }
+    }
+    while (o--) {
+        const old_block = old_blocks[o];
+        if (!new_lookup.has(old_block.key))
+            destroy(old_block, lookup);
+    }
+    while (n)
+        insert(new_blocks[n - 1]);
+    run_all(updates);
+    return new_blocks;
+}
+
+function get_spread_update(levels, updates) {
+    const update = {};
+    const to_null_out = {};
+    const accounted_for = { $$scope: 1 };
+    let i = levels.length;
+    while (i--) {
+        const o = levels[i];
+        const n = updates[i];
+        if (n) {
+            for (const key in o) {
+                if (!(key in n))
+                    to_null_out[key] = 1;
+            }
+            for (const key in n) {
+                if (!accounted_for[key]) {
+                    update[key] = n[key];
+                    accounted_for[key] = 1;
+                }
+            }
+            levels[i] = n;
+        }
+        else {
+            for (const key in o) {
+                accounted_for[key] = 1;
+            }
+        }
+    }
+    for (const key in to_null_out) {
+        if (!(key in update))
+            update[key] = undefined;
+    }
+    return update;
+}
+function get_spread_object(spread_props) {
+    return typeof spread_props === 'object' && spread_props !== null ? spread_props : {};
+}
+
 function bind(component, name, callback) {
     const index = component.$$.props[name];
     if (index !== undefined) {
@@ -652,16 +977,16 @@ function bind(component, name, callback) {
         callback(component.$$.ctx[index]);
     }
 }
-function create_component$1(block) {
+function create_component(block) {
     block && block.c();
 }
-function mount_component$1(component, target, anchor, customElement) {
+function mount_component(component, target, anchor, customElement) {
     const { fragment, after_update } = component.$$;
     fragment && fragment.m(target, anchor);
     if (!customElement) {
         // onMount happens before the initial afterUpdate
-        add_render_callback$1(() => {
-            const new_on_destroy = component.$$.on_mount.map(run$1).filter(is_function$1);
+        add_render_callback(() => {
+            const new_on_destroy = component.$$.on_mount.map(run).filter(is_function);
             // if the component was destroyed immediately
             // it will update the `$$.on_destroy` reference to `null`.
             // the destructured on_destroy may still reference to the old array
@@ -671,18 +996,18 @@ function mount_component$1(component, target, anchor, customElement) {
             else {
                 // Edge case - component was destroyed immediately,
                 // most likely as a result of a binding initialising
-                run_all$1(new_on_destroy);
+                run_all(new_on_destroy);
             }
             component.$$.on_mount = [];
         });
     }
-    after_update.forEach(add_render_callback$1);
+    after_update.forEach(add_render_callback);
 }
-function destroy_component$1(component, detaching) {
+function destroy_component(component, detaching) {
     const $$ = component.$$;
     if ($$.fragment !== null) {
         flush_render_callbacks($$.after_update);
-        run_all$1($$.on_destroy);
+        run_all($$.on_destroy);
         $$.fragment && $$.fragment.d(detaching);
         // TODO null out other refs, including component.$$ (but need to
         // preserve final state?)
@@ -690,25 +1015,25 @@ function destroy_component$1(component, detaching) {
         $$.ctx = [];
     }
 }
-function make_dirty$1(component, i) {
+function make_dirty(component, i) {
     if (component.$$.dirty[0] === -1) {
-        dirty_components$1.push(component);
-        schedule_update$1();
+        dirty_components.push(component);
+        schedule_update();
         component.$$.dirty.fill(0);
     }
     component.$$.dirty[(i / 31) | 0] |= (1 << (i % 31));
 }
-function init$1(component, options, instance, create_fragment, not_equal, props, append_styles, dirty = [-1]) {
-    const parent_component = current_component$1;
-    set_current_component$1(component);
+function init(component, options, instance, create_fragment, not_equal, props, append_styles, dirty = [-1]) {
+    const parent_component = current_component;
+    set_current_component(component);
     const $$ = component.$$ = {
         fragment: null,
         ctx: [],
         // state
         props,
-        update: noop$1,
+        update: noop,
         not_equal,
-        bound: blank_object$1(),
+        bound: blank_object(),
         // lifecycle
         on_mount: [],
         on_destroy: [],
@@ -717,7 +1042,7 @@ function init$1(component, options, instance, create_fragment, not_equal, props,
         after_update: [],
         context: new Map(options.context || (parent_component ? parent_component.$$.context : [])),
         // everything else
-        callbacks: blank_object$1(),
+        callbacks: blank_object(),
         dirty,
         skip_bound: false,
         root: options.target || parent_component.$$.root
@@ -731,45 +1056,45 @@ function init$1(component, options, instance, create_fragment, not_equal, props,
                 if (!$$.skip_bound && $$.bound[i])
                     $$.bound[i](value);
                 if (ready)
-                    make_dirty$1(component, i);
+                    make_dirty(component, i);
             }
             return ret;
         })
         : [];
     $$.update();
     ready = true;
-    run_all$1($$.before_update);
+    run_all($$.before_update);
     // `false` as a special case of no DOM component
     $$.fragment = create_fragment ? create_fragment($$.ctx) : false;
     if (options.target) {
         if (options.hydrate) {
-            const nodes = children$1(options.target);
+            const nodes = children(options.target);
             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             $$.fragment && $$.fragment.l(nodes);
-            nodes.forEach(detach$1);
+            nodes.forEach(detach);
         }
         else {
             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             $$.fragment && $$.fragment.c();
         }
         if (options.intro)
-            transition_in$1(component.$$.fragment);
-        mount_component$1(component, options.target, options.anchor, options.customElement);
-        flush$1();
+            transition_in(component.$$.fragment);
+        mount_component(component, options.target, options.anchor, options.customElement);
+        flush();
     }
-    set_current_component$1(parent_component);
+    set_current_component(parent_component);
 }
 /**
  * Base class for Svelte components. Used when dev=false.
  */
-let SvelteComponent$1 = class SvelteComponent {
+class SvelteComponent {
     $destroy() {
-        destroy_component$1(this, 1);
-        this.$destroy = noop$1;
+        destroy_component(this, 1);
+        this.$destroy = noop;
     }
     $on(type, callback) {
-        if (!is_function$1(callback)) {
-            return noop$1;
+        if (!is_function(callback)) {
+            return noop;
         }
         const callbacks = (this.$$.callbacks[type] || (this.$$.callbacks[type] = []));
         callbacks.push(callback);
@@ -780,13 +1105,13 @@ let SvelteComponent$1 = class SvelteComponent {
         };
     }
     $set($$props) {
-        if (this.$$set && !is_empty$1($$props)) {
+        if (this.$$set && !is_empty($$props)) {
             this.$$.skip_bound = true;
             this.$$set($$props);
             this.$$.skip_bound = false;
         }
     }
-};
+}
 
 const subscriber_queue = [];
 /**
@@ -794,11 +1119,11 @@ const subscriber_queue = [];
  * @param {*=}value initial value
  * @param {StartStopNotifier=} start
  */
-function writable(value, start = noop$1) {
+function writable(value, start = noop) {
     let stop;
     const subscribers = new Set();
     function set(new_value) {
-        if (safe_not_equal$1(value, new_value)) {
+        if (safe_not_equal(value, new_value)) {
             value = new_value;
             if (stop) { // store is ready
                 const run_queue = !subscriber_queue.length;
@@ -818,11 +1143,11 @@ function writable(value, start = noop$1) {
     function update(fn) {
         set(fn(value));
     }
-    function subscribe(run, invalidate = noop$1) {
+    function subscribe(run, invalidate = noop) {
         const subscriber = [run, invalidate];
         subscribers.add(subscriber);
         if (subscribers.size === 1) {
-            stop = start(set) || noop$1;
+            stop = start(set) || noop;
         }
         run(value);
         return () => {
@@ -1112,18 +1437,126 @@ class CalendarSettingsTab extends obsidian.PluginSettingTab {
     }
 }
 
+/**
+ * Helpers used by the embedded-calendar renderer.
+ *
+ * `obsidian-calendar-ui` configures Moment globally. That is fine for a
+ * single sidebar view, but it makes two embedded calendars race when they use
+ * different locale or week-start overrides. Everything in this module works
+ * with locale data and per-instance Moment locales instead.
+ */
+const languageToMomentLocale = {
+    en: "en-gb",
+    zh: "zh-cn",
+    "zh-tw": "zh-tw",
+    ru: "ru",
+    ko: "ko",
+    it: "it",
+    id: "id",
+    ro: "ro",
+    "pt-br": "pt-br",
+    cz: "cs",
+    da: "da",
+    de: "de",
+    es: "es",
+    fr: "fr",
+    no: "nn",
+    pl: "pl",
+    pt: "pt",
+    tr: "tr",
+    hi: "hi",
+    nl: "nl",
+    ar: "ar",
+    ja: "ja",
+};
+const weekdays = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+];
+function savedObsidianLanguage() {
+    var _a;
+    try {
+        return ((_a = localStorage.getItem("language")) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || "en";
+    }
+    catch (_b) {
+        return "en";
+    }
+}
+function availableLocale(requestedLocale) {
+    const requested = requestedLocale.toLowerCase();
+    const locales = window.moment.locales();
+    return (locales.find((locale) => locale.toLowerCase() === requested) ||
+        locales.find((locale) => locale.toLowerCase() === requested.split("-")[0]) ||
+        null);
+}
+/**
+ * Resolve the locale without calling `moment.locale(name)`, whose static form
+ * changes Moment's process-wide default locale.
+ */
+function resolveCalendarLocale(localeOverride = "system-default") {
+    var _a;
+    const obsidianLanguage = savedObsidianLanguage();
+    const systemLanguage = (_a = navigator.language) === null || _a === void 0 ? void 0 : _a.toLowerCase();
+    let requestedLocale = languageToMomentLocale[obsidianLanguage] || obsidianLanguage;
+    if (localeOverride !== "system-default") {
+        requestedLocale = localeOverride;
+    }
+    else if (systemLanguage === null || systemLanguage === void 0 ? void 0 : systemLanguage.startsWith(obsidianLanguage)) {
+        requestedLocale = systemLanguage;
+    }
+    // `locales()` is read-only. Prefer English over Moment's ambient default if
+    // the requested locale has not been bundled by Obsidian.
+    return availableLocale(requestedLocale) || availableLocale("en") || "en";
+}
+/** Return the Sunday-based day index for an embed's own week-start choice. */
+function getCalendarWeekStartIndex(locale, weekStart = "locale") {
+    const explicitWeekStart = weekdays.indexOf(weekStart);
+    if (explicitWeekStart !== -1) {
+        return explicitWeekStart;
+    }
+    return window.moment.localeData(locale).firstDayOfWeek();
+}
+/**
+ * Localize an individual Moment without modifying the global Moment locale.
+ */
+function withCalendarLocale(date, locale) {
+    return date.clone().locale(locale);
+}
+/**
+ * Format weekday headings in the same order as the isolated calendar grid.
+ * Moment's `d` token is numeric, while the Calendar setting historically uses
+ * it as a shorthand for a single visible letter.
+ */
+function getCalendarWeekdayLabels(date, locale, weekStart, format = "ddd") {
+    const normalizedFormat = format.trim() || "ddd";
+    const momentFormat = normalizedFormat === "d" ? "dd" : normalizedFormat;
+    const firstDay = withCalendarLocale(date, locale)
+        .startOf("day")
+        .day(weekStart);
+    return Array.from({ length: 7 }, (_value, index) => {
+        const label = firstDay.clone().add(index, "day").format(momentFormat);
+        return normalizedFormat === "d" ? Array.from(label)[0] || label : label;
+    });
+}
+
+const defaultDateFormatter = (date, format) => date.format(format);
 function normalizedFolder(folder = "") {
     return obsidian.normalizePath(folder)
         .replace(/^\/+|\/+$/g, "")
         .replace(/^\.$/, "");
 }
 /** Build the exact vault path which a configured note would use for a date. */
-function getConfiguredNotePath(date, settings) {
+function getConfiguredNotePath(date, settings, formatDate = defaultDateFormatter) {
     const format = settings === null || settings === void 0 ? void 0 : settings.format;
     if (!format) {
         return null;
     }
-    const filename = `${date.format(format)}.md`;
+    const filename = `${formatDate(date, format)}.md`;
     const folder = normalizedFolder(settings.folder);
     return obsidian.normalizePath(folder ? `${folder}/${filename}` : filename);
 }
@@ -1148,24 +1581,28 @@ function getRelativeConfiguredNotePath(file, settings) {
  * `YYYY-MM-DD['s note]`. Fall back to its lenient parser only when formatting
  * the result reproduces the original path exactly.
  */
-function parseConfiguredNoteDate(file, settings) {
+function parseConfiguredNoteDate(file, settings, locale) {
     const format = settings === null || settings === void 0 ? void 0 : settings.format;
     const relativePath = getRelativeConfiguredNotePath(file, settings);
     if (!format || relativePath === null) {
         return null;
     }
-    const strict = window.moment(relativePath, format, true);
+    const strict = locale
+        ? window.moment(relativePath, format, locale, true)
+        : window.moment(relativePath, format, true);
     if (strict.isValid()) {
         return strict;
     }
-    const lenient = window.moment(relativePath, format, false);
+    const lenient = locale
+        ? window.moment(relativePath, format, locale, false)
+        : window.moment(relativePath, format, false);
     return lenient.isValid() && lenient.format(format) === relativePath
         ? lenient
         : null;
 }
 /** Find a configured note from a pre-built path index without date-UID loss. */
-function getConfiguredNoteForDate(date, settings, notesByPath) {
-    const path = getConfiguredNotePath(date, settings);
+function getConfiguredNoteForDate(date, settings, notesByPath, formatDate = defaultDateFormatter) {
+    const path = getConfiguredNotePath(date, settings, formatDate);
     return path ? notesByPath[path] || null : null;
 }
 
@@ -1184,7 +1621,7 @@ function uniqueFiles(files) {
     });
 }
 function addDateEntry(index, date, file) {
-    const id = getDateUID$1(date, "day");
+    const id = getDateUID(date, "day");
     const dateFiles = index.filesByDate[id] || [];
     if (!dateFiles.some((existing) => existing.path === file.path)) {
         dateFiles.push(file);
@@ -1193,10 +1630,10 @@ function addDateEntry(index, date, file) {
     }
 }
 /** Parse a daily note path using the exact Daily Notes folder and format. */
-function getDateFromDailyNoteFile(file) {
-    return parseConfiguredNoteDate(file, dailyNoteSettings());
+function getDateFromDailyNoteFile(file, options = {}) {
+    return parseConfiguredNoteDate(file, dailyNoteSettings(), options.locale);
 }
-function parseMetadataDateValue(value, format) {
+function parseMetadataDateValue(value, format, locale) {
     if (value instanceof Date || typeof value === "number") {
         const date = window.moment(value);
         return date.isValid() ? date : null;
@@ -1204,7 +1641,9 @@ function parseMetadataDateValue(value, format) {
     if (typeof value !== "string") {
         return null;
     }
-    const configured = window.moment(value, format, true);
+    const configured = locale
+        ? window.moment(value, format, locale, true)
+        : window.moment(value, format, true);
     if (configured.isValid()) {
         return configured;
     }
@@ -1226,7 +1665,7 @@ function getDateFromDailyNoteMetadata(file, options = {}) {
     const rawValue = frontmatter === null || frontmatter === void 0 ? void 0 : frontmatter[property];
     const values = Array.isArray(rawValue) ? rawValue : [rawValue];
     for (const value of values) {
-        const date = parseMetadataDateValue(value, format);
+        const date = parseMetadataDateValue(value, format, options.locale);
         if (date) {
             return date;
         }
@@ -1236,7 +1675,7 @@ function getDateFromDailyNoteMetadata(file, options = {}) {
 /** Prefer a configured metadata date when that optional integration is on. */
 function getDateFromCalendarDailyNote(file, options = {}) {
     return (getDateFromDailyNoteMetadata(file, options) ||
-        getDateFromDailyNoteFile(file));
+        getDateFromDailyNoteFile(file, options));
 }
 /**
  * Build a full daily-note index. Unlike the interface package's UID-only map,
@@ -1251,7 +1690,7 @@ function getAllDailyNotesIndex(options = {}) {
     };
     window.app.vault.getMarkdownFiles().forEach((file) => {
         index.filesByPath[file.path] = file;
-        const filenameDate = getDateFromDailyNoteFile(file);
+        const filenameDate = getDateFromDailyNoteFile(file, options);
         if (filenameDate) {
             addDateEntry(index, filenameDate, file);
         }
@@ -1271,16 +1710,17 @@ function getAllDailyNotesIndex(options = {}) {
  * deliberately first, so `YYYYMM` and quoted formats find their existing
  * shared note before a new note can be created.
  */
-function getDailyNotesForDate(date, index) {
+function getDailyNotesForDate(date, index, options = {}) {
     if (!index) {
         return [];
     }
-    const canonical = getConfiguredNoteForDate(date, dailyNoteSettings(), index.filesByPath);
-    const indexed = index.filesByDate[getDateUID$1(date, "day")] || [];
+    const configuredDate = options.locale ? date.clone().locale(options.locale) : date;
+    const canonical = getConfiguredNoteForDate(configuredDate, dailyNoteSettings(), index.filesByPath);
+    const indexed = index.filesByDate[getDateUID(date, "day")] || [];
     return uniqueFiles(canonical ? [canonical, ...indexed] : indexed);
 }
-function getDailyNoteForDate(date, index) {
-    return getDailyNotesForDate(date, index)[0] || null;
+function getDailyNoteForDate(date, index, options = {}) {
+    return getDailyNotesForDate(date, index, options)[0] || null;
 }
 function getDailyNoteEntries(notes) {
     if (!notes) {
@@ -1311,22 +1751,110 @@ function getAdjacentDailyNote(date, notes, direction) {
     return entries.find((entry) => entry.date.isAfter(date, "day")) || null;
 }
 
-/** Parse weekly paths with the same quoted-format fallback as daily notes. */
-function getDateFromWeeklyNoteFile(file) {
-    return parseConfiguredNoteDate(file, getWeeklyNoteSettings());
+function getCalendarSettings(settings) {
+    const candidate = settings;
+    if (typeof (candidate === null || candidate === void 0 ? void 0 : candidate.weekStart) !== "string") {
+        return null;
+    }
+    return {
+        localeOverride: candidate.localeOverride || "system-default",
+        weekStart: candidate.weekStart,
+    };
 }
-function getAllWeeklyNotesIndex() {
+/**
+ * Get a named Moment locale whose week rule belongs to one Calendar instance.
+ * Defining a locale briefly changes Moment's default, so restore it before
+ * returning; all later work explicitly selects the returned locale per date.
+ */
+function resolveWeeklyMomentLocale(settings) {
+    const calendarSettings = getCalendarSettings(settings);
+    if (!calendarSettings) {
+        return null;
+    }
+    const locale = resolveCalendarLocale(calendarSettings.localeOverride);
+    if (calendarSettings.weekStart === "locale") {
+        return locale;
+    }
+    const weekStart = getCalendarWeekStartIndex(locale, calendarSettings.weekStart);
+    const customLocale = `erin-calendar-${locale}-dow-${weekStart}`;
+    if (window.moment.locales().includes(customLocale)) {
+        return customLocale;
+    }
+    const baseLocale = window.moment.localeData(locale);
+    const previousLocale = window.moment.locale();
+    try {
+        window.moment.defineLocale(customLocale, {
+            parentLocale: locale,
+            week: Object.assign(Object.assign({}, (baseLocale._week || {})), { dow: weekStart }),
+        });
+    }
+    finally {
+        window.moment.locale(previousLocale);
+    }
+    return customLocale;
+}
+/** Return a clone whose native Moment week tokens honor this calendar. */
+function withWeeklyMomentLocale(date, settings) {
+    const locale = resolveWeeklyMomentLocale(settings);
+    return locale ? date.clone().locale(locale) : date.clone();
+}
+/** Format a weekly note path without changing Moment's ambient locale. */
+function formatWeeklyNoteDate(date, format, settings) {
+    return withWeeklyMomentLocale(date, settings).format(format);
+}
+/** Build the selection/index key using this calendar's own week rule. */
+function getWeeklyNoteDateUID(date, settings) {
+    return `week-${withWeeklyMomentLocale(date, settings)
+        .startOf("week")
+        .format()}`;
+}
+function stringSetting(value) {
+    return typeof value === "string" ? value.trim() : "";
+}
+/**
+ * Merge this plugin's optional Weekly Note settings with the Calendar or
+ * Periodic Notes settings exposed by obsidian-daily-notes-interface.
+ *
+ * Empty strings intentionally mean "inherit". That keeps the existing
+ * sidebar behaviour while allowing a calendar embed to override any subset
+ * of the three settings.
+ */
+function resolveWeeklyNoteSettings(settings) {
+    const overrides = settings;
+    const directSettings = settings;
+    const fallback = getWeeklyNoteSettings() || {};
+    return {
+        format: stringSetting(overrides === null || overrides === void 0 ? void 0 : overrides.weeklyNoteFormat) ||
+            stringSetting(directSettings === null || directSettings === void 0 ? void 0 : directSettings.format) ||
+            stringSetting(fallback.format) ||
+            DEFAULT_WEEKLY_NOTE_FORMAT,
+        folder: stringSetting(overrides === null || overrides === void 0 ? void 0 : overrides.weeklyNoteFolder) ||
+            stringSetting(directSettings === null || directSettings === void 0 ? void 0 : directSettings.folder) ||
+            stringSetting(fallback.folder),
+        template: stringSetting(overrides === null || overrides === void 0 ? void 0 : overrides.weeklyNoteTemplate) ||
+            stringSetting(directSettings === null || directSettings === void 0 ? void 0 : directSettings.template) ||
+            stringSetting(fallback.template),
+    };
+}
+
+/** Parse weekly paths with the same quoted-format fallback as daily notes. */
+function getDateFromWeeklyNoteFile(file, settings) {
+    return parseConfiguredNoteDate(file, resolveWeeklyNoteSettings(settings), resolveWeeklyMomentLocale(settings) || undefined);
+}
+function getAllWeeklyNotesIndex(settings) {
     const index = {
         filesByPath: {},
         filesByDate: {},
     };
+    const weeklyNoteSettings = resolveWeeklyNoteSettings(settings);
+    const locale = resolveWeeklyMomentLocale(settings) || undefined;
     window.app.vault.getMarkdownFiles().forEach((file) => {
         index.filesByPath[file.path] = file;
-        const date = getDateFromWeeklyNoteFile(file);
+        const date = parseConfiguredNoteDate(file, weeklyNoteSettings, locale);
         if (!date) {
             return;
         }
-        const id = getDateUID$1(date, "week");
+        const id = getWeeklyNoteDateUID(date, settings);
         const dateFiles = index.filesByDate[id] || [];
         if (!dateFiles.some((existing) => existing.path === file.path)) {
             dateFiles.push(file);
@@ -1340,13 +1868,19 @@ function getAllWeeklyNotesIndex() {
  * literal apostrophes and week/month/day combinations Moment cannot strictly
  * parse back from a filename.
  */
-function getWeeklyNoteForDate(date, index) {
+function getWeeklyNoteForDate(date, index, settings) {
     var _a;
     if (!index) {
         return null;
     }
-    const canonical = getConfiguredNoteForDate(date.clone().startOf("week"), getWeeklyNoteSettings(), index.filesByPath);
-    return canonical || ((_a = index.filesByDate[getDateUID$1(date, "week")]) === null || _a === void 0 ? void 0 : _a[0]) || null;
+    const weeklyNoteSettings = resolveWeeklyNoteSettings(settings);
+    const localizedDate = withWeeklyMomentLocale(date, settings);
+    const canonical = getConfiguredNoteForDate(
+    // The caller may supply a start-of-week date calculated for an embedded
+    // calendar's locale/week-start. Do not reapply Moment's global locale
+    // here; the UID fallback below remains for legacy callers.
+    localizedDate, weeklyNoteSettings, index.filesByPath, (formattedDate, format) => formatWeeklyNoteDate(formattedDate, format, settings));
+    return canonical || ((_a = index.filesByDate[getWeeklyNoteDateUID(localizedDate, settings)]) === null || _a === void 0 ? void 0 : _a[0]) || null;
 }
 
 const classList = (obj) => {
@@ -1376,17 +1910,20 @@ function partition(arr, predicate) {
  *
  * @param file
  */
-function getDateUIDFromFile(file, dailyOptions = {}) {
+function getDateUIDFromFile(file, dailyOptions = {}, calendarSettings) {
     if (!file) {
         return null;
     }
     let date = getDateFromCalendarDailyNote(file, dailyOptions);
     if (date) {
-        return getDateUID$1(date, "day");
+        return getDateUID(date, "day");
     }
-    date = getDateFromWeeklyNoteFile(file);
+    date = getDateFromWeeklyNoteFile(file, calendarSettings);
     if (date) {
-        return getDateUID$1(date, "week");
+        if (calendarSettings) {
+            return getWeeklyNoteDateUID(date, calendarSettings);
+        }
+        return getDateUID(date, "week");
     }
     return null;
 }
@@ -1463,7 +2000,7 @@ async function getAllDateTags() {
         const contents = await vault.cachedRead(file);
         const seenIds = new Set();
         for (const { date, tag } of dates) {
-            const id = getDateUID$1(date, "day");
+            const id = getDateUID(date, "day");
             if (seenIds.has(id)) {
                 continue;
             }
@@ -1480,23 +2017,24 @@ async function getAllDateTags() {
     return { entriesByDate };
 }
 function getDateTagEntries(date, index) {
-    return (index === null || index === void 0 ? void 0 : index.entriesByDate[getDateUID$1(date, "day")]) || [];
+    return (index === null || index === void 0 ? void 0 : index.entriesByDate[getDateUID(date, "day")]) || [];
 }
 
 const settings = writable(defaultSettings);
 function getDailyNoteIndexOptions(options) {
     return {
+        locale: resolveCalendarLocale(options.localeOverride),
         metadataDateFormat: options.metadataDateFormat,
         metadataDateProperty: options.metadataDateProperty,
         useMetadataDates: options.useMetadataDates,
     };
 }
-function createDailyNotesStore() {
+function createDailyNotesStore(settingsStore = settings) {
     let hasError = false;
     const store = writable(null);
     return Object.assign({ reindex: () => {
             try {
-                const dailyNotes = getAllDailyNotesIndex(getDailyNoteIndexOptions(get_store_value(settings)));
+                const dailyNotes = getAllDailyNotesIndex(getDailyNoteIndexOptions(get_store_value(settingsStore)));
                 store.set(dailyNotes);
                 hasError = false;
             }
@@ -1510,12 +2048,12 @@ function createDailyNotesStore() {
             }
         } }, store);
 }
-function createWeeklyNotesStore() {
+function createWeeklyNotesStore(settingsStore = settings) {
     let hasError = false;
     const store = writable(null);
     return Object.assign({ reindex: () => {
             try {
-                const weeklyNotes = getAllWeeklyNotesIndex();
+                const weeklyNotes = getAllWeeklyNotesIndex(get_store_value(settingsStore));
                 store.set(weeklyNotes);
                 hasError = false;
             }
@@ -1560,20 +2098,28 @@ function createDateTagsStore() {
 }
 const dateTags = createDateTagsStore();
 const activeDailyDate = writable(null);
-function createSelectedFileStore() {
+function createSelectedFileStore(settingsStore = settings, activeDailyDateStore = activeDailyDate) {
     const store = writable(null);
     return Object.assign({ setFile: (file, selectedDailyDate) => {
             const dailyDate = selectedDailyDate ||
                 (file
-                    ? getDateFromCalendarDailyNote(file, getDailyNoteIndexOptions(get_store_value(settings)))
+                    ? getDateFromCalendarDailyNote(file, getDailyNoteIndexOptions(get_store_value(settingsStore)))
                     : null);
-            activeDailyDate.set(dailyDate ? dailyDate.clone().startOf("day") : null);
+            activeDailyDateStore.set(dailyDate ? dailyDate.clone().startOf("day") : null);
             store.set(dailyDate
-                ? getDateUID$1(dailyDate, "day")
-                : getDateUIDFromFile(file, getDailyNoteIndexOptions(get_store_value(settings))));
+                ? getDateUID(dailyDate, "day")
+                : getDateUIDFromFile(file, getDailyNoteIndexOptions(get_store_value(settingsStore)), get_store_value(settingsStore)));
         } }, store);
 }
 const activeFile = createSelectedFileStore();
+/** Build selection stores that belong to one embedded calendar. */
+function createCalendarSelection(settingsStore) {
+    const activeDailyDate = writable(null);
+    return {
+        activeDailyDate,
+        activeFile: createSelectedFileStore(settingsStore, activeDailyDate),
+    };
+}
 
 class ConfirmationModal extends obsidian.Modal {
     constructor(app, config) {
@@ -1669,7 +2215,7 @@ async function tryToCreatePeriodicNote(granularity, date, inNewTab, settings, cb
     }
 }
 
-const templateDateUnits = {
+const templateDateUnits$1 = {
     y: "y",
     q: "Q",
     m: "m",
@@ -1678,7 +2224,7 @@ const templateDateUnits = {
     h: "h",
     s: "s",
 };
-function joinPaths(...partSegments) {
+function joinPaths$1(...partSegments) {
     let parts = [];
     partSegments.forEach((part) => {
         parts = parts.concat(part.split("/"));
@@ -1698,10 +2244,10 @@ async function getNotePath(directory, filename) {
     const markdownFilename = filename.endsWith(".md")
         ? filename
         : `${filename}.md`;
-    const path = obsidian.normalizePath(joinPaths(directory, markdownFilename));
+    const path = obsidian.normalizePath(joinPaths$1(directory, markdownFilename));
     const folder = path.replace(/\\/g, "/").split("/").slice(0, -1);
     if (folder.length) {
-        const folderPath = joinPaths(...folder);
+        const folderPath = joinPaths$1(...folder);
         if (!window.app.vault.getAbstractFileByPath(folderPath)) {
             await window.app.vault.createFolder(folderPath);
         }
@@ -1728,7 +2274,7 @@ function expandDailyNoteTemplate(templateContents, date, format, now = window.mo
             second: now.get("second"),
         });
         if (calc) {
-            targetDate.add(parseInt(timeDelta, 10), templateDateUnits[unit]);
+            targetDate.add(parseInt(timeDelta, 10), templateDateUnits$1[unit]);
         }
         if (momentFormat) {
             return targetDate.format(momentFormat.substring(1).trim());
@@ -1791,14 +2337,123 @@ async function tryToCreateDailyNote(date, inNewSplit, settings, cb) {
     }
 }
 
+const templateDateUnits = {
+    y: "y",
+    q: "Q",
+    m: "m",
+    w: "w",
+    d: "d",
+    h: "h",
+    s: "s",
+};
+function joinPaths(...partSegments) {
+    let parts = [];
+    partSegments.forEach((part) => {
+        parts = parts.concat(part.split("/"));
+    });
+    const normalizedParts = [];
+    parts.forEach((part) => {
+        if (part && part !== ".") {
+            normalizedParts.push(part);
+        }
+    });
+    if (parts[0] === "") {
+        normalizedParts.unshift("");
+    }
+    return normalizedParts.join("/");
+}
+async function getWeeklyNotePath(directory, filename) {
+    const markdownFilename = filename.endsWith(".md")
+        ? filename
+        : `${filename}.md`;
+    const path = obsidian.normalizePath(joinPaths(directory, markdownFilename));
+    const folder = path.replace(/\\/g, "/").split("/").slice(0, -1);
+    if (folder.length) {
+        const folderPath = joinPaths(...folder);
+        if (!window.app.vault.getAbstractFileByPath(folderPath)) {
+            await window.app.vault.createFolder(folderPath);
+        }
+    }
+    return path;
+}
+function getDaysOfWeek(date) {
+    let weekStart = date.localeData().firstDayOfWeek();
+    const daysOfWeek = [
+        "sunday",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+    ];
+    while (weekStart) {
+        daysOfWeek.push(daysOfWeek.shift());
+        weekStart -= 1;
+    }
+    return daysOfWeek;
+}
+/** Expand the same date, title, time, and weekday tokens as Weekly Notes. */
+function expandWeeklyNoteTemplate(templateContents, date, format, now = window.moment(), settings) {
+    const weeklyDate = withWeeklyMomentLocale(date, settings);
+    const filename = formatWeeklyNoteDate(weeklyDate, format, settings);
+    return templateContents
+        .replace(/{{\s*date\s*}}/gi, formatWeeklyNoteDate(weeklyDate, format, settings))
+        .replace(/{{\s*time\s*}}/gi, now.format("HH:mm"))
+        .replace(/{{\s*title\s*}}/gi, filename)
+        .replace(/{{\s*(date|time)\s*(([+-]\d+)([yqmwdhs]))?\s*(:.+?)?}}/gi, (_match, _timeOrDate, calc, timeDelta, unit, momentFormat) => {
+        const targetDate = weeklyDate.clone().set({
+            hour: now.get("hour"),
+            minute: now.get("minute"),
+            second: now.get("second"),
+        });
+        if (calc) {
+            targetDate.add(parseInt(timeDelta, 10), templateDateUnits[unit.toLowerCase()]);
+        }
+        if (momentFormat) {
+            return formatWeeklyNoteDate(targetDate, momentFormat.substring(1).trim(), settings);
+        }
+        return formatWeeklyNoteDate(targetDate, format, settings);
+    })
+        .replace(/{{\s*(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\s*:(.*?)}}/gi, (_match, dayOfWeek, momentFormat) => {
+        const day = getDaysOfWeek(weeklyDate).indexOf(dayOfWeek.toLowerCase());
+        return weeklyDate.clone().weekday(day).format(momentFormat.trim());
+    });
+}
+/**
+ * Create a Weekly Note with the supplied Calendar settings. Empty Calendar
+ * values inherit their corresponding setting from Calendar or Periodic Notes.
+ */
+async function createCalendarWeeklyNote(date, settings) {
+    const { folder, format, template } = resolveWeeklyNoteSettings(settings);
+    const weeklyDate = withWeeklyMomentLocale(date, settings);
+    const filename = formatWeeklyNoteDate(weeklyDate, format, settings);
+    let path = filename;
+    try {
+        const [templateContents, foldInfo] = await getTemplateInfo(template);
+        path = await getWeeklyNotePath(folder, filename);
+        const createdFile = await window.app.vault.create(path, expandWeeklyNoteTemplate(templateContents, weeklyDate, format, undefined, settings));
+        const foldManager = window.app.foldManager;
+        foldManager === null || foldManager === void 0 ? void 0 : foldManager.save(createdFile, foldInfo);
+        return createdFile;
+    }
+    catch (err) {
+        console.error(`Failed to create file: '${path}'`, err);
+        new obsidian.Notice("Unable to create new file.");
+        return null;
+    }
+}
 /**
  * Create a Weekly Note for a given date.
  */
 async function tryToCreateWeeklyNote(date, inNewSplit, settings, cb) {
-    const { format } = getWeeklyNoteSettings();
-    const filename = date.format(format);
+    const { format } = resolveWeeklyNoteSettings(settings);
+    const filename = formatWeeklyNoteDate(date, format, settings);
     const createFile = async () => {
-        const dailyNote = await createWeeklyNote(date);
+        const dailyNote = await createCalendarWeeklyNote(date, settings);
+        if (!dailyNote) {
+            return;
+        }
         const leaf = getNoteLeaf(inNewSplit);
         await leaf.openFile(dailyNote, { active: true });
         cb === null || cb === void 0 ? void 0 : cb(dailyNote);
@@ -1816,595 +2471,76 @@ async function tryToCreateWeeklyNote(date, inNewSplit, settings, cb) {
     }
 }
 
-function noop() { }
-function assign(tar, src) {
-    // @ts-ignore
-    for (const k in src)
-        tar[k] = src[k];
-    return tar;
+function daysInYear(year) {
+    return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+        ? 366
+        : 365;
 }
-function is_promise(value) {
-    return value && typeof value === 'object' && typeof value.then === 'function';
+// This is Moment's week-number calculation expressed without updating a
+// Moment locale. `doy` remains locale-specific while `dow` is per embed.
+function firstWeekOffset(year, dow, doy) {
+    const firstWeekDay = 7 + dow - doy;
+    const localWeekday = (7 + new Date(Date.UTC(year, 0, firstWeekDay)).getUTCDay() - dow) % 7;
+    return -localWeekday + firstWeekDay - 1;
 }
-function run(fn) {
-    return fn();
+function weeksInYear(year, dow, doy) {
+    const thisYearOffset = firstWeekOffset(year, dow, doy);
+    const nextYearOffset = firstWeekOffset(year + 1, dow, doy);
+    return (daysInYear(year) - thisYearOffset + nextYearOffset) / 7;
 }
-function blank_object() {
-    return Object.create(null);
-}
-function run_all(fns) {
-    fns.forEach(run);
-}
-function is_function(thing) {
-    return typeof thing === 'function';
-}
-function safe_not_equal(a, b) {
-    return a != a ? b == b : a !== b || ((a && typeof a === 'object') || typeof a === 'function');
-}
-function not_equal(a, b) {
-    return a != a ? b == b : a !== b;
-}
-function is_empty(obj) {
-    return Object.keys(obj).length === 0;
-}
-function create_slot(definition, ctx, $$scope, fn) {
-    if (definition) {
-        const slot_ctx = get_slot_context(definition, ctx, $$scope, fn);
-        return definition[0](slot_ctx);
+/** Calculate a locale-style week number for the supplied per-embed week start. */
+function getCalendarWeekNumber(date, weekStart, localeFirstDayOfYear) {
+    const weekOffset = firstWeekOffset(date.year(), weekStart, localeFirstDayOfYear);
+    let week = Math.floor((date.dayOfYear() - weekOffset - 1) / 7) + 1;
+    if (week < 1) {
+        week += weeksInYear(date.year() - 1, weekStart, localeFirstDayOfYear);
     }
+    else if (week > weeksInYear(date.year(), weekStart, localeFirstDayOfYear)) {
+        week -= weeksInYear(date.year(), weekStart, localeFirstDayOfYear);
+    }
+    return week;
 }
-function get_slot_context(definition, ctx, $$scope, fn) {
-    return definition[1] && fn
-        ? assign($$scope.ctx.slice(), definition[1](fn(ctx)))
-        : $$scope.ctx;
-}
-function get_slot_changes(definition, $$scope, dirty, fn) {
-    if (definition[2] && fn) {
-        const lets = definition[2](fn(dirty));
-        if ($$scope.dirty === undefined) {
-            return lets;
+/** Generate the six calendar rows without reading Moment's global locale. */
+function getCalendarMonth(displayedMonth, locale, weekStart, localeFirstDayOfYear) {
+    const startOfMonth = withCalendarLocale(displayedMonth, locale)
+        .date(1)
+        .startOf("day");
+    const startOffset = (startOfMonth.day() - weekStart + 7) % 7;
+    let date = startOfMonth.clone().subtract(startOffset, "days");
+    const month = [];
+    for (let dayIndex = 0; dayIndex < 42; dayIndex += 1) {
+        if (dayIndex % 7 === 0) {
+            month.push({
+                days: [],
+                weekNum: getCalendarWeekNumber(date, weekStart, localeFirstDayOfYear),
+            });
         }
-        if (typeof lets === 'object') {
-            const merged = [];
-            const len = Math.max($$scope.dirty.length, lets.length);
-            for (let i = 0; i < len; i += 1) {
-                merged[i] = $$scope.dirty[i] | lets[i];
-            }
-            return merged;
-        }
-        return $$scope.dirty | lets;
+        month[month.length - 1].days.push(date);
+        date = date.clone().add(1, "day");
     }
-    return $$scope.dirty;
+    return month;
 }
-function update_slot(slot, slot_definition, ctx, $$scope, dirty, get_slot_changes_fn, get_slot_context_fn) {
-    const slot_changes = get_slot_changes(slot_definition, $$scope, dirty, get_slot_changes_fn);
-    if (slot_changes) {
-        const slot_context = get_slot_context(slot_definition, ctx, $$scope, get_slot_context_fn);
-        slot.p(slot_context, slot_changes);
-    }
+function getCalendarWeekStart(date, weekStart) {
+    const offset = (date.day() - weekStart + 7) % 7;
+    return date.clone().startOf("day").subtract(offset, "days");
 }
-function null_to_empty(value) {
-    return value == null ? '' : value;
+function getCalendarDayUID(date) {
+    return `day-${date.clone().startOf("day").format()}`;
+}
+function getCalendarWeekUID(date, weekStart) {
+    return `week-${getCalendarWeekStart(date, weekStart).format()}`;
+}
+function isWeekend(date) {
+    return date.isoWeekday() === 6 || date.isoWeekday() === 7;
 }
 
-function append(target, node) {
-    target.appendChild(node);
-}
-function insert(target, node, anchor) {
-    target.insertBefore(node, anchor || null);
-}
-function detach(node) {
-    node.parentNode.removeChild(node);
-}
-function destroy_each(iterations, detaching) {
-    for (let i = 0; i < iterations.length; i += 1) {
-        if (iterations[i])
-            iterations[i].d(detaching);
-    }
-}
-function element(name) {
-    return document.createElement(name);
-}
-function svg_element(name) {
-    return document.createElementNS('http://www.w3.org/2000/svg', name);
-}
-function text(data) {
-    return document.createTextNode(data);
-}
-function space() {
-    return text(' ');
-}
-function empty() {
-    return text('');
-}
-function listen(node, event, handler, options) {
-    node.addEventListener(event, handler, options);
-    return () => node.removeEventListener(event, handler, options);
-}
-function attr(node, attribute, value) {
-    if (value == null)
-        node.removeAttribute(attribute);
-    else if (node.getAttribute(attribute) !== value)
-        node.setAttribute(attribute, value);
-}
-function set_attributes(node, attributes) {
-    // @ts-ignore
-    const descriptors = Object.getOwnPropertyDescriptors(node.__proto__);
-    for (const key in attributes) {
-        if (attributes[key] == null) {
-            node.removeAttribute(key);
-        }
-        else if (key === 'style') {
-            node.style.cssText = attributes[key];
-        }
-        else if (key === '__value') {
-            node.value = node[key] = attributes[key];
-        }
-        else if (descriptors[key] && descriptors[key].set) {
-            node[key] = attributes[key];
-        }
-        else {
-            attr(node, key, attributes[key]);
-        }
-    }
-}
-function children(element) {
-    return Array.from(element.childNodes);
-}
-function set_data(text, data) {
-    data = '' + data;
-    if (text.wholeText !== data)
-        text.data = data;
-}
-function toggle_class(element, name, toggle) {
-    element.classList[toggle ? 'add' : 'remove'](name);
+/* src/ui/isolatedCalendar/Dot.svelte generated by Svelte v3.59.2 */
+
+function add_css$6(target) {
+	append_styles(target, "svelte-1x17ntc", ".dot.svelte-1x17ntc,.hollow.svelte-1x17ntc{display:inline-block;height:6px;margin:0 1px;width:6px}.filled.svelte-1x17ntc{fill:var(--color-dot)}.active.filled.svelte-1x17ntc{fill:var(--text-on-accent)}.hollow.svelte-1x17ntc{fill:none;stroke:var(--color-dot)}.active.hollow.svelte-1x17ntc{fill:none;stroke:var(--text-on-accent)}");
 }
 
-let current_component;
-function set_current_component(component) {
-    current_component = component;
-}
-function get_current_component() {
-    if (!current_component)
-        throw new Error('Function called outside component initialization');
-    return current_component;
-}
-
-const dirty_components = [];
-const binding_callbacks = [];
-const render_callbacks = [];
-const flush_callbacks = [];
-const resolved_promise = Promise.resolve();
-let update_scheduled = false;
-function schedule_update() {
-    if (!update_scheduled) {
-        update_scheduled = true;
-        resolved_promise.then(flush);
-    }
-}
-function add_render_callback(fn) {
-    render_callbacks.push(fn);
-}
-let flushing = false;
-const seen_callbacks = new Set();
-function flush() {
-    if (flushing)
-        return;
-    flushing = true;
-    do {
-        // first, call beforeUpdate functions
-        // and update components
-        for (let i = 0; i < dirty_components.length; i += 1) {
-            const component = dirty_components[i];
-            set_current_component(component);
-            update(component.$$);
-        }
-        set_current_component(null);
-        dirty_components.length = 0;
-        while (binding_callbacks.length)
-            binding_callbacks.pop()();
-        // then, once components are updated, call
-        // afterUpdate functions. This may cause
-        // subsequent updates...
-        for (let i = 0; i < render_callbacks.length; i += 1) {
-            const callback = render_callbacks[i];
-            if (!seen_callbacks.has(callback)) {
-                // ...so guard against infinite loops
-                seen_callbacks.add(callback);
-                callback();
-            }
-        }
-        render_callbacks.length = 0;
-    } while (dirty_components.length);
-    while (flush_callbacks.length) {
-        flush_callbacks.pop()();
-    }
-    update_scheduled = false;
-    flushing = false;
-    seen_callbacks.clear();
-}
-function update($$) {
-    if ($$.fragment !== null) {
-        $$.update();
-        run_all($$.before_update);
-        const dirty = $$.dirty;
-        $$.dirty = [-1];
-        $$.fragment && $$.fragment.p($$.ctx, dirty);
-        $$.after_update.forEach(add_render_callback);
-    }
-}
-const outroing = new Set();
-let outros;
-function group_outros() {
-    outros = {
-        r: 0,
-        c: [],
-        p: outros // parent group
-    };
-}
-function check_outros() {
-    if (!outros.r) {
-        run_all(outros.c);
-    }
-    outros = outros.p;
-}
-function transition_in(block, local) {
-    if (block && block.i) {
-        outroing.delete(block);
-        block.i(local);
-    }
-}
-function transition_out(block, local, detach, callback) {
-    if (block && block.o) {
-        if (outroing.has(block))
-            return;
-        outroing.add(block);
-        outros.c.push(() => {
-            outroing.delete(block);
-            if (callback) {
-                if (detach)
-                    block.d(1);
-                callback();
-            }
-        });
-        block.o(local);
-    }
-}
-
-function handle_promise(promise, info) {
-    const token = info.token = {};
-    function update(type, index, key, value) {
-        if (info.token !== token)
-            return;
-        info.resolved = value;
-        let child_ctx = info.ctx;
-        if (key !== undefined) {
-            child_ctx = child_ctx.slice();
-            child_ctx[key] = value;
-        }
-        const block = type && (info.current = type)(child_ctx);
-        let needs_flush = false;
-        if (info.block) {
-            if (info.blocks) {
-                info.blocks.forEach((block, i) => {
-                    if (i !== index && block) {
-                        group_outros();
-                        transition_out(block, 1, 1, () => {
-                            if (info.blocks[i] === block) {
-                                info.blocks[i] = null;
-                            }
-                        });
-                        check_outros();
-                    }
-                });
-            }
-            else {
-                info.block.d(1);
-            }
-            block.c();
-            transition_in(block, 1);
-            block.m(info.mount(), info.anchor);
-            needs_flush = true;
-        }
-        info.block = block;
-        if (info.blocks)
-            info.blocks[index] = block;
-        if (needs_flush) {
-            flush();
-        }
-    }
-    if (is_promise(promise)) {
-        const current_component = get_current_component();
-        promise.then(value => {
-            set_current_component(current_component);
-            update(info.then, 1, info.value, value);
-            set_current_component(null);
-        }, error => {
-            set_current_component(current_component);
-            update(info.catch, 2, info.error, error);
-            set_current_component(null);
-            if (!info.hasCatch) {
-                throw error;
-            }
-        });
-        // if we previously had a then/catch block, destroy it
-        if (info.current !== info.pending) {
-            update(info.pending, 0);
-            return true;
-        }
-    }
-    else {
-        if (info.current !== info.then) {
-            update(info.then, 1, info.value, promise);
-            return true;
-        }
-        info.resolved = promise;
-    }
-}
-function outro_and_destroy_block(block, lookup) {
-    transition_out(block, 1, 1, () => {
-        lookup.delete(block.key);
-    });
-}
-function update_keyed_each(old_blocks, dirty, get_key, dynamic, ctx, list, lookup, node, destroy, create_each_block, next, get_context) {
-    let o = old_blocks.length;
-    let n = list.length;
-    let i = o;
-    const old_indexes = {};
-    while (i--)
-        old_indexes[old_blocks[i].key] = i;
-    const new_blocks = [];
-    const new_lookup = new Map();
-    const deltas = new Map();
-    i = n;
-    while (i--) {
-        const child_ctx = get_context(ctx, list, i);
-        const key = get_key(child_ctx);
-        let block = lookup.get(key);
-        if (!block) {
-            block = create_each_block(key, child_ctx);
-            block.c();
-        }
-        else {
-            block.p(child_ctx, dirty);
-        }
-        new_lookup.set(key, new_blocks[i] = block);
-        if (key in old_indexes)
-            deltas.set(key, Math.abs(i - old_indexes[key]));
-    }
-    const will_move = new Set();
-    const did_move = new Set();
-    function insert(block) {
-        transition_in(block, 1);
-        block.m(node, next);
-        lookup.set(block.key, block);
-        next = block.first;
-        n--;
-    }
-    while (o && n) {
-        const new_block = new_blocks[n - 1];
-        const old_block = old_blocks[o - 1];
-        const new_key = new_block.key;
-        const old_key = old_block.key;
-        if (new_block === old_block) {
-            // do nothing
-            next = new_block.first;
-            o--;
-            n--;
-        }
-        else if (!new_lookup.has(old_key)) {
-            // remove old block
-            destroy(old_block, lookup);
-            o--;
-        }
-        else if (!lookup.has(new_key) || will_move.has(new_key)) {
-            insert(new_block);
-        }
-        else if (did_move.has(old_key)) {
-            o--;
-        }
-        else if (deltas.get(new_key) > deltas.get(old_key)) {
-            did_move.add(new_key);
-            insert(new_block);
-        }
-        else {
-            will_move.add(old_key);
-            o--;
-        }
-    }
-    while (o--) {
-        const old_block = old_blocks[o];
-        if (!new_lookup.has(old_block.key))
-            destroy(old_block, lookup);
-    }
-    while (n)
-        insert(new_blocks[n - 1]);
-    return new_blocks;
-}
-
-function get_spread_update(levels, updates) {
-    const update = {};
-    const to_null_out = {};
-    const accounted_for = { $$scope: 1 };
-    let i = levels.length;
-    while (i--) {
-        const o = levels[i];
-        const n = updates[i];
-        if (n) {
-            for (const key in o) {
-                if (!(key in n))
-                    to_null_out[key] = 1;
-            }
-            for (const key in n) {
-                if (!accounted_for[key]) {
-                    update[key] = n[key];
-                    accounted_for[key] = 1;
-                }
-            }
-            levels[i] = n;
-        }
-        else {
-            for (const key in o) {
-                accounted_for[key] = 1;
-            }
-        }
-    }
-    for (const key in to_null_out) {
-        if (!(key in update))
-            update[key] = undefined;
-    }
-    return update;
-}
-function get_spread_object(spread_props) {
-    return typeof spread_props === 'object' && spread_props !== null ? spread_props : {};
-}
-function create_component(block) {
-    block && block.c();
-}
-function mount_component(component, target, anchor, customElement) {
-    const { fragment, on_mount, on_destroy, after_update } = component.$$;
-    fragment && fragment.m(target, anchor);
-    if (!customElement) {
-        // onMount happens before the initial afterUpdate
-        add_render_callback(() => {
-            const new_on_destroy = on_mount.map(run).filter(is_function);
-            if (on_destroy) {
-                on_destroy.push(...new_on_destroy);
-            }
-            else {
-                // Edge case - component was destroyed immediately,
-                // most likely as a result of a binding initialising
-                run_all(new_on_destroy);
-            }
-            component.$$.on_mount = [];
-        });
-    }
-    after_update.forEach(add_render_callback);
-}
-function destroy_component(component, detaching) {
-    const $$ = component.$$;
-    if ($$.fragment !== null) {
-        run_all($$.on_destroy);
-        $$.fragment && $$.fragment.d(detaching);
-        // TODO null out other refs, including component.$$ (but need to
-        // preserve final state?)
-        $$.on_destroy = $$.fragment = null;
-        $$.ctx = [];
-    }
-}
-function make_dirty(component, i) {
-    if (component.$$.dirty[0] === -1) {
-        dirty_components.push(component);
-        schedule_update();
-        component.$$.dirty.fill(0);
-    }
-    component.$$.dirty[(i / 31) | 0] |= (1 << (i % 31));
-}
-function init(component, options, instance, create_fragment, not_equal, props, dirty = [-1]) {
-    const parent_component = current_component;
-    set_current_component(component);
-    const $$ = component.$$ = {
-        fragment: null,
-        ctx: null,
-        // state
-        props,
-        update: noop,
-        not_equal,
-        bound: blank_object(),
-        // lifecycle
-        on_mount: [],
-        on_destroy: [],
-        on_disconnect: [],
-        before_update: [],
-        after_update: [],
-        context: new Map(parent_component ? parent_component.$$.context : []),
-        // everything else
-        callbacks: blank_object(),
-        dirty,
-        skip_bound: false
-    };
-    let ready = false;
-    $$.ctx = instance
-        ? instance(component, options.props || {}, (i, ret, ...rest) => {
-            const value = rest.length ? rest[0] : ret;
-            if ($$.ctx && not_equal($$.ctx[i], $$.ctx[i] = value)) {
-                if (!$$.skip_bound && $$.bound[i])
-                    $$.bound[i](value);
-                if (ready)
-                    make_dirty(component, i);
-            }
-            return ret;
-        })
-        : [];
-    $$.update();
-    ready = true;
-    run_all($$.before_update);
-    // `false` as a special case of no DOM component
-    $$.fragment = create_fragment ? create_fragment($$.ctx) : false;
-    if (options.target) {
-        if (options.hydrate) {
-            const nodes = children(options.target);
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            $$.fragment && $$.fragment.l(nodes);
-            nodes.forEach(detach);
-        }
-        else {
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            $$.fragment && $$.fragment.c();
-        }
-        if (options.intro)
-            transition_in(component.$$.fragment);
-        mount_component(component, options.target, options.anchor, options.customElement);
-        flush();
-    }
-    set_current_component(parent_component);
-}
-/**
- * Base class for Svelte components. Used when dev=false.
- */
-class SvelteComponent {
-    $destroy() {
-        destroy_component(this, 1);
-        this.$destroy = noop;
-    }
-    $on(type, callback) {
-        const callbacks = (this.$$.callbacks[type] || (this.$$.callbacks[type] = []));
-        callbacks.push(callback);
-        return () => {
-            const index = callbacks.indexOf(callback);
-            if (index !== -1)
-                callbacks.splice(index, 1);
-        };
-    }
-    $set($$props) {
-        if (this.$$set && !is_empty($$props)) {
-            this.$$.skip_bound = true;
-            this.$$set($$props);
-            this.$$.skip_bound = false;
-        }
-    }
-}
-
-/**
- * dateUID is a way of weekly identifying daily/weekly/monthly notes.
- * They are prefixed with the granularity to avoid ambiguity.
- */
-function getDateUID(date, granularity = "day") {
-    const ts = date.clone().startOf(granularity).format();
-    return `${granularity}-${ts}`;
-}
-var getDateUID_1 = getDateUID;
-
-/* src/components/Dot.svelte generated by Svelte v3.35.0 */
-
-function add_css$5() {
-	var style = element("style");
-	style.id = "svelte-1widvzq-style";
-	style.textContent = ".dot.svelte-1widvzq,.hollow.svelte-1widvzq{display:inline-block;height:6px;width:6px;margin:0 1px}.filled.svelte-1widvzq{fill:var(--color-dot)}.active.filled.svelte-1widvzq{fill:var(--text-on-accent)}.hollow.svelte-1widvzq{fill:none;stroke:var(--color-dot)}.active.hollow.svelte-1widvzq{fill:none;stroke:var(--text-on-accent)}";
-	append(document.head, style);
-}
-
-// (14:0) {:else}
+// (15:0) {:else}
 function create_else_block$1(ctx) {
 	let svg;
 	let circle;
@@ -2417,7 +2553,7 @@ function create_else_block$1(ctx) {
 			attr(circle, "cx", "3");
 			attr(circle, "cy", "3");
 			attr(circle, "r", "2");
-			attr(svg, "class", svg_class_value = "" + (null_to_empty(`hollow ${/*className*/ ctx[0]}`) + " svelte-1widvzq"));
+			attr(svg, "class", svg_class_value = "" + (null_to_empty(`hollow ${/*className*/ ctx[0]}`) + " svelte-1x17ntc"));
 			attr(svg, "viewBox", "0 0 6 6");
 			attr(svg, "xmlns", "http://www.w3.org/2000/svg");
 			toggle_class(svg, "active", /*isActive*/ ctx[2]);
@@ -2427,7 +2563,7 @@ function create_else_block$1(ctx) {
 			append(svg, circle);
 		},
 		p(ctx, dirty) {
-			if (dirty & /*className*/ 1 && svg_class_value !== (svg_class_value = "" + (null_to_empty(`hollow ${/*className*/ ctx[0]}`) + " svelte-1widvzq"))) {
+			if (dirty & /*className*/ 1 && svg_class_value !== (svg_class_value = "" + (null_to_empty(`hollow ${/*className*/ ctx[0]}`) + " svelte-1x17ntc"))) {
 				attr(svg, "class", svg_class_value);
 			}
 
@@ -2454,7 +2590,7 @@ function create_if_block$2(ctx) {
 			attr(circle, "cx", "3");
 			attr(circle, "cy", "3");
 			attr(circle, "r", "2");
-			attr(svg, "class", svg_class_value = "" + (null_to_empty(`dot filled ${/*className*/ ctx[0]}`) + " svelte-1widvzq"));
+			attr(svg, "class", svg_class_value = "" + (null_to_empty(`dot filled ${/*className*/ ctx[0]}`) + " svelte-1x17ntc"));
 			attr(svg, "viewBox", "0 0 6 6");
 			attr(svg, "xmlns", "http://www.w3.org/2000/svg");
 			toggle_class(svg, "active", /*isActive*/ ctx[2]);
@@ -2464,7 +2600,7 @@ function create_if_block$2(ctx) {
 			append(svg, circle);
 		},
 		p(ctx, dirty) {
-			if (dirty & /*className*/ 1 && svg_class_value !== (svg_class_value = "" + (null_to_empty(`dot filled ${/*className*/ ctx[0]}`) + " svelte-1widvzq"))) {
+			if (dirty & /*className*/ 1 && svg_class_value !== (svg_class_value = "" + (null_to_empty(`dot filled ${/*className*/ ctx[0]}`) + " svelte-1x17ntc"))) {
 				attr(svg, "class", svg_class_value);
 			}
 
@@ -2478,7 +2614,7 @@ function create_if_block$2(ctx) {
 	};
 }
 
-function create_fragment$6(ctx) {
+function create_fragment$7(ctx) {
 	let if_block_anchor;
 
 	function select_block_type(ctx, dirty) {
@@ -2520,15 +2656,15 @@ function create_fragment$6(ctx) {
 	};
 }
 
-function instance$6($$self, $$props, $$invalidate) {
+function instance$7($$self, $$props, $$invalidate) {
 	let { className = "" } = $$props;
 	let { isFilled } = $$props;
 	let { isActive } = $$props;
 
 	$$self.$$set = $$props => {
-		if ("className" in $$props) $$invalidate(0, className = $$props.className);
-		if ("isFilled" in $$props) $$invalidate(1, isFilled = $$props.isFilled);
-		if ("isActive" in $$props) $$invalidate(2, isActive = $$props.isActive);
+		if ('className' in $$props) $$invalidate(0, className = $$props.className);
+		if ('isFilled' in $$props) $$invalidate(1, isFilled = $$props.isFilled);
+		if ('isActive' in $$props) $$invalidate(2, isActive = $$props.isActive);
 	};
 
 	return [className, isFilled, isActive];
@@ -2537,23 +2673,40 @@ function instance$6($$self, $$props, $$invalidate) {
 class Dot extends SvelteComponent {
 	constructor(options) {
 		super();
-		if (!document.getElementById("svelte-1widvzq-style")) add_css$5();
-		init(this, options, instance$6, create_fragment$6, safe_not_equal, { className: 0, isFilled: 1, isActive: 2 });
+		init(this, options, instance$7, create_fragment$7, safe_not_equal, { className: 0, isFilled: 1, isActive: 2 }, add_css$6);
 	}
 }
 
-/* src/components/MetadataResolver.svelte generated by Svelte v3.35.0 */
+/* src/ui/isolatedCalendar/MetadataResolver.svelte generated by Svelte v3.59.2 */
+
+const get_default_slot_changes_2 = dirty => ({});
+
+const get_default_slot_context_2 = ctx => ({
+	metadata: {
+		classes: [],
+		dots: [],
+		dataAttributes: {}
+	}
+});
 
 const get_default_slot_changes_1 = dirty => ({});
-const get_default_slot_context_1 = ctx => ({ metadata: null });
-const get_default_slot_changes = dirty => ({ metadata: dirty & /*metadata*/ 1 });
-const get_default_slot_context = ctx => ({ metadata: /*resolvedMeta*/ ctx[3] });
 
-// (11:0) {:else}
+const get_default_slot_context_1 = ctx => ({
+	metadata: {
+		classes: [],
+		dots: [],
+		dataAttributes: {}
+	}
+});
+
+const get_default_slot_changes = dirty => ({ metadata: dirty & /*metadata*/ 1 });
+const get_default_slot_context = ctx => ({ metadata: /*resolvedMetadata*/ ctx[3] });
+
+// (10:0) {:else}
 function create_else_block(ctx) {
 	let current;
 	const default_slot_template = /*#slots*/ ctx[2].default;
-	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[1], get_default_slot_context_1);
+	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[1], get_default_slot_context_2);
 
 	return {
 		c() {
@@ -2568,8 +2721,17 @@ function create_else_block(ctx) {
 		},
 		p(ctx, dirty) {
 			if (default_slot) {
-				if (default_slot.p && dirty & /*$$scope*/ 2) {
-					update_slot(default_slot, default_slot_template, ctx, /*$$scope*/ ctx[1], dirty, get_default_slot_changes_1, get_default_slot_context_1);
+				if (default_slot.p && (!current || dirty & /*$$scope*/ 2)) {
+					update_slot_base(
+						default_slot,
+						default_slot_template,
+						ctx,
+						/*$$scope*/ ctx[1],
+						!current
+						? get_all_dirty_from_scope(/*$$scope*/ ctx[1])
+						: get_slot_changes(default_slot_template, /*$$scope*/ ctx[1], dirty, get_default_slot_changes_2),
+						get_default_slot_context_2
+					);
 				}
 			}
 		},
@@ -2588,7 +2750,7 @@ function create_else_block(ctx) {
 	};
 }
 
-// (7:0) {#if metadata}
+// (4:0) {#if metadata}
 function create_if_block$1(ctx) {
 	let await_block_anchor;
 	let promise;
@@ -2598,7 +2760,7 @@ function create_if_block$1(ctx) {
 		ctx,
 		current: null,
 		token: null,
-		hasCatch: false,
+		hasCatch: true,
 		pending: create_pending_block,
 		then: create_then_block,
 		catch: create_catch_block,
@@ -2625,9 +2787,7 @@ function create_if_block$1(ctx) {
 			info.ctx = ctx;
 
 			if (dirty & /*metadata*/ 1 && promise !== (promise = /*metadata*/ ctx[0]) && handle_promise(promise, info)) ; else {
-				const child_ctx = ctx.slice();
-				child_ctx[3] = info.resolved;
-				info.block.p(child_ctx, dirty);
+				update_await_block_branch(info, ctx, dirty);
 			}
 		},
 		i(local) {
@@ -2652,23 +2812,11 @@ function create_if_block$1(ctx) {
 	};
 }
 
-// (1:0) <svelte:options immutable />  <script lang="ts">; export let metadata; </script>  {#if metadata}
+// (7:2) {:catch}
 function create_catch_block(ctx) {
-	return {
-		c: noop,
-		m: noop,
-		p: noop,
-		i: noop,
-		o: noop,
-		d: noop
-	};
-}
-
-// (8:37)      <slot metadata="{resolvedMeta}
-function create_then_block(ctx) {
 	let current;
 	const default_slot_template = /*#slots*/ ctx[2].default;
-	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[1], get_default_slot_context);
+	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[1], get_default_slot_context_1);
 
 	return {
 		c() {
@@ -2683,8 +2831,17 @@ function create_then_block(ctx) {
 		},
 		p(ctx, dirty) {
 			if (default_slot) {
-				if (default_slot.p && dirty & /*$$scope, metadata*/ 3) {
-					update_slot(default_slot, default_slot_template, ctx, /*$$scope*/ ctx[1], dirty, get_default_slot_changes, get_default_slot_context);
+				if (default_slot.p && (!current || dirty & /*$$scope*/ 2)) {
+					update_slot_base(
+						default_slot,
+						default_slot_template,
+						ctx,
+						/*$$scope*/ ctx[1],
+						!current
+						? get_all_dirty_from_scope(/*$$scope*/ ctx[1])
+						: get_slot_changes(default_slot_template, /*$$scope*/ ctx[1], dirty, get_default_slot_changes_1),
+						get_default_slot_context_1
+					);
 				}
 			}
 		},
@@ -2703,7 +2860,55 @@ function create_then_block(ctx) {
 	};
 }
 
-// (1:0) <svelte:options immutable />  <script lang="ts">; export let metadata; </script>  {#if metadata}
+// (5:41)      <slot metadata={resolvedMetadata}
+function create_then_block(ctx) {
+	let current;
+	const default_slot_template = /*#slots*/ ctx[2].default;
+	const default_slot = create_slot(default_slot_template, ctx, /*$$scope*/ ctx[1], get_default_slot_context);
+
+	return {
+		c() {
+			if (default_slot) default_slot.c();
+		},
+		m(target, anchor) {
+			if (default_slot) {
+				default_slot.m(target, anchor);
+			}
+
+			current = true;
+		},
+		p(ctx, dirty) {
+			if (default_slot) {
+				if (default_slot.p && (!current || dirty & /*$$scope, metadata*/ 3)) {
+					update_slot_base(
+						default_slot,
+						default_slot_template,
+						ctx,
+						/*$$scope*/ ctx[1],
+						!current
+						? get_all_dirty_from_scope(/*$$scope*/ ctx[1])
+						: get_slot_changes(default_slot_template, /*$$scope*/ ctx[1], dirty, get_default_slot_changes),
+						get_default_slot_context
+					);
+				}
+			}
+		},
+		i(local) {
+			if (current) return;
+			transition_in(default_slot, local);
+			current = true;
+		},
+		o(local) {
+			transition_out(default_slot, local);
+			current = false;
+		},
+		d(detaching) {
+			if (default_slot) default_slot.d(detaching);
+		}
+	};
+}
+
+// (1:0) <script lang="ts">export let metadata; </script>  {#if metadata}
 function create_pending_block(ctx) {
 	return {
 		c: noop,
@@ -2715,7 +2920,7 @@ function create_pending_block(ctx) {
 	};
 }
 
-function create_fragment$5(ctx) {
+function create_fragment$6(ctx) {
 	let current_block_type_index;
 	let if_block;
 	let if_block_anchor;
@@ -2784,14 +2989,13 @@ function create_fragment$5(ctx) {
 	};
 }
 
-function instance$5($$self, $$props, $$invalidate) {
+function instance$6($$self, $$props, $$invalidate) {
 	let { $$slots: slots = {}, $$scope } = $$props;
-	
 	let { metadata } = $$props;
 
 	$$self.$$set = $$props => {
-		if ("metadata" in $$props) $$invalidate(0, metadata = $$props.metadata);
-		if ("$$scope" in $$props) $$invalidate(1, $$scope = $$props.$$scope);
+		if ('metadata' in $$props) $$invalidate(0, metadata = $$props.metadata);
+		if ('$$scope' in $$props) $$invalidate(1, $$scope = $$props.$$scope);
 	};
 
 	return [metadata, $$scope, slots];
@@ -2800,57 +3004,14 @@ function instance$5($$self, $$props, $$invalidate) {
 class MetadataResolver extends SvelteComponent {
 	constructor(options) {
 		super();
-		init(this, options, instance$5, create_fragment$5, not_equal, { metadata: 0 });
+		init(this, options, instance$6, create_fragment$6, safe_not_equal, { metadata: 0 });
 	}
 }
 
-function isMacOS() {
-    return navigator.appVersion.indexOf("Mac") !== -1;
-}
-function isMetaPressed(e) {
-    return isMacOS() ? e.metaKey : e.ctrlKey;
-}
-function getDaysOfWeek(..._args) {
-    return window.moment.weekdaysShort(true);
-}
-function isWeekend(date) {
-    return date.isoWeekday() === 6 || date.isoWeekday() === 7;
-}
-function getStartOfWeek(days) {
-    return days[0].weekday(0);
-}
-/**
- * Generate a 2D array of daily information to power
- * the calendar view.
- */
-function getMonth(displayedMonth, ..._args) {
-    const locale = window.moment().locale();
-    const month = [];
-    let week;
-    const startOfMonth = displayedMonth.clone().locale(locale).date(1);
-    const startOffset = startOfMonth.weekday();
-    let date = startOfMonth.clone().subtract(startOffset, "days");
-    for (let _day = 0; _day < 42; _day++) {
-        if (_day % 7 === 0) {
-            week = {
-                days: [],
-                weekNum: date.week(),
-            };
-            month.push(week);
-        }
-        week.days.push(date);
-        date = date.clone().add(1, "days");
-    }
-    return month;
-}
+/* src/ui/isolatedCalendar/Day.svelte generated by Svelte v3.59.2 */
 
-/* src/components/Day.svelte generated by Svelte v3.35.0 */
-
-function add_css$4() {
-	var style = element("style");
-	style.id = "svelte-q3wqg9-style";
-	style.textContent = ".day.svelte-q3wqg9{background-color:var(--color-background-day);border-radius:4px;color:var(--color-text-day);cursor:pointer;font-size:0.8em;height:100%;padding:4px;position:relative;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:baseline}.day.svelte-q3wqg9:hover{background-color:var(--interactive-hover)}.day.active.svelte-q3wqg9:hover{background-color:var(--interactive-accent-hover)}.adjacent-month.svelte-q3wqg9{opacity:0.25}.today.svelte-q3wqg9{color:var(--color-text-today)}.day.svelte-q3wqg9:active,.active.svelte-q3wqg9,.active.today.svelte-q3wqg9{color:var(--text-on-accent);background-color:var(--interactive-accent)}.dot-container.svelte-q3wqg9{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}";
-	append(document.head, style);
+function add_css$5(target) {
+	append_styles(target, "svelte-1c8p9lp", ".day.svelte-1c8p9lp{background-color:var(--color-background-day);border-radius:4px;color:var(--color-text-day);cursor:pointer;font-size:0.8em;height:100%;padding:4px;position:relative;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:baseline}.day.svelte-1c8p9lp:hover{background-color:var(--interactive-hover)}.day.active.svelte-1c8p9lp:hover{background-color:var(--interactive-accent-hover)}.adjacent-month.svelte-1c8p9lp{opacity:0.25}.today.svelte-1c8p9lp{color:var(--color-text-today)}.day.svelte-1c8p9lp:active,.active.svelte-1c8p9lp,.active.today.svelte-1c8p9lp{background-color:var(--interactive-accent);color:var(--text-on-accent)}.dot-container.svelte-1c8p9lp{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}");
 }
 
 function get_each_context$2(ctx, list, i) {
@@ -2859,11 +3020,18 @@ function get_each_context$2(ctx, list, i) {
 	return child_ctx;
 }
 
-// (36:8) {#each metadata.dots as dot}
+// (34:8) {#each metadata.dots as dot}
 function create_each_block$2(ctx) {
 	let dot;
 	let current;
-	const dot_spread_levels = [/*dot*/ ctx[11]];
+
+	const dot_spread_levels = [
+		/*dot*/ ctx[11],
+		{
+			isActive: /*selectedId*/ ctx[6] === getCalendarDayUID(/*date*/ ctx[0])
+		}
+	];
+
 	let dot_props = {};
 
 	for (let i = 0; i < dot_spread_levels.length; i += 1) {
@@ -2881,8 +3049,13 @@ function create_each_block$2(ctx) {
 			current = true;
 		},
 		p(ctx, dirty) {
-			const dot_changes = (dirty & /*metadata*/ 128)
-			? get_spread_update(dot_spread_levels, [get_spread_object(/*dot*/ ctx[11])])
+			const dot_changes = (dirty & /*metadata, selectedId, getCalendarDayUID, date*/ 193)
+			? get_spread_update(dot_spread_levels, [
+					dirty & /*metadata*/ 128 && get_spread_object(/*dot*/ ctx[11]),
+					dirty & /*selectedId, getCalendarDayUID, date*/ 65 && {
+						isActive: /*selectedId*/ ctx[6] === getCalendarDayUID(/*date*/ ctx[0])
+					}
+				])
 			: {};
 
 			dot.$set(dot_changes);
@@ -2902,7 +3075,7 @@ function create_each_block$2(ctx) {
 	};
 }
 
-// (22:2) <MetadataResolver metadata="{metadata}" let:metadata>
+// (20:2) <MetadataResolver {metadata} let:metadata>
 function create_default_slot$1(ctx) {
 	let div1;
 	let t0_value = /*date*/ ctx[0].format("D") + "";
@@ -2928,13 +3101,13 @@ function create_default_slot$1(ctx) {
 		{
 			class: div1_class_value = `day ${/*metadata*/ ctx[7].classes.join(" ")}`
 		},
-		/*metadata*/ ctx[7].dataAttributes || {}
+		/*metadata*/ ctx[7].dataAttributes
 	];
 
-	let div1_data = {};
+	let div_data_1 = {};
 
 	for (let i = 0; i < div1_levels.length; i += 1) {
-		div1_data = assign(div1_data, div1_levels[i]);
+		div_data_1 = assign(div_data_1, div1_levels[i]);
 	}
 
 	return {
@@ -2948,12 +3121,12 @@ function create_default_slot$1(ctx) {
 				each_blocks[i].c();
 			}
 
-			attr(div0, "class", "dot-container svelte-q3wqg9");
-			set_attributes(div1, div1_data);
-			toggle_class(div1, "active", /*selectedId*/ ctx[6] === getDateUID_1(/*date*/ ctx[0], "day"));
+			attr(div0, "class", "dot-container svelte-1c8p9lp");
+			set_attributes(div1, div_data_1);
+			toggle_class(div1, "active", /*selectedId*/ ctx[6] === getCalendarDayUID(/*date*/ ctx[0]));
 			toggle_class(div1, "adjacent-month", !/*date*/ ctx[0].isSame(/*displayedMonth*/ ctx[5], "month"));
 			toggle_class(div1, "today", /*date*/ ctx[0].isSame(/*today*/ ctx[4], "day"));
-			toggle_class(div1, "svelte-q3wqg9", true);
+			toggle_class(div1, "svelte-1c8p9lp", true);
 		},
 		m(target, anchor) {
 			insert(target, div1, anchor);
@@ -2962,7 +3135,9 @@ function create_default_slot$1(ctx) {
 			append(div1, div0);
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
-				each_blocks[i].m(div0, null);
+				if (each_blocks[i]) {
+					each_blocks[i].m(div0, null);
+				}
 			}
 
 			current = true;
@@ -2985,9 +3160,9 @@ function create_default_slot$1(ctx) {
 		},
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
-			if ((!current || dirty & /*date*/ 1) && t0_value !== (t0_value = /*date*/ ctx[0].format("D") + "")) set_data(t0, t0_value);
+			if ((!current || dirty & /*date*/ 1) && t0_value !== (t0_value = /*date*/ ctx[0].format("D") + "")) set_data_maybe_contenteditable(t0, t0_value, div_data_1['contenteditable']);
 
-			if (dirty & /*metadata*/ 128) {
+			if (dirty & /*metadata, selectedId, getCalendarDayUID, date*/ 193) {
 				each_value = /*metadata*/ ctx[7].dots;
 				let i;
 
@@ -3014,15 +3189,15 @@ function create_default_slot$1(ctx) {
 				check_outros();
 			}
 
-			set_attributes(div1, div1_data = get_spread_update(div1_levels, [
+			set_attributes(div1, div_data_1 = get_spread_update(div1_levels, [
 				(!current || dirty & /*metadata*/ 128 && div1_class_value !== (div1_class_value = `day ${/*metadata*/ ctx[7].classes.join(" ")}`)) && { class: div1_class_value },
-				dirty & /*metadata*/ 128 && (/*metadata*/ ctx[7].dataAttributes || {})
+				dirty & /*metadata*/ 128 && /*metadata*/ ctx[7].dataAttributes
 			]));
 
-			toggle_class(div1, "active", /*selectedId*/ ctx[6] === getDateUID_1(/*date*/ ctx[0], "day"));
+			toggle_class(div1, "active", /*selectedId*/ ctx[6] === getCalendarDayUID(/*date*/ ctx[0]));
 			toggle_class(div1, "adjacent-month", !/*date*/ ctx[0].isSame(/*displayedMonth*/ ctx[5], "month"));
 			toggle_class(div1, "today", /*date*/ ctx[0].isSame(/*today*/ ctx[4], "day"));
-			toggle_class(div1, "svelte-q3wqg9", true);
+			toggle_class(div1, "svelte-1c8p9lp", true);
 		},
 		i(local) {
 			if (current) return;
@@ -3051,7 +3226,7 @@ function create_default_slot$1(ctx) {
 	};
 }
 
-function create_fragment$4(ctx) {
+function create_fragment$5(ctx) {
 	let td;
 	let metadataresolver;
 	let current;
@@ -3106,9 +3281,13 @@ function create_fragment$4(ctx) {
 	};
 }
 
-function instance$4($$self, $$props, $$invalidate) {
-	
-	
+function isMetaPressed$1(event) {
+	return navigator.platform.includes("Mac")
+	? event.metaKey
+	: event.ctrlKey;
+}
+
+function instance$5($$self, $$props, $$invalidate) {
 	let { date } = $$props;
 	let { metadata } = $$props;
 	let { onHover } = $$props;
@@ -3117,19 +3296,19 @@ function instance$4($$self, $$props, $$invalidate) {
 	let { today } = $$props;
 	let { displayedMonth = null } = $$props;
 	let { selectedId = null } = $$props;
-	const click_handler = e => onClick(date, isMetaPressed(e));
-	const contextmenu_handler = e => onContextMenu(date, e);
-	const pointerover_handler = e => onHover(date, e.target, isMetaPressed(e));
+	const click_handler = event => onClick(date, isMetaPressed$1(event));
+	const contextmenu_handler = event => onContextMenu(date, event);
+	const pointerover_handler = event => onHover(date, event.target, isMetaPressed$1(event));
 
 	$$self.$$set = $$props => {
-		if ("date" in $$props) $$invalidate(0, date = $$props.date);
-		if ("metadata" in $$props) $$invalidate(7, metadata = $$props.metadata);
-		if ("onHover" in $$props) $$invalidate(1, onHover = $$props.onHover);
-		if ("onClick" in $$props) $$invalidate(2, onClick = $$props.onClick);
-		if ("onContextMenu" in $$props) $$invalidate(3, onContextMenu = $$props.onContextMenu);
-		if ("today" in $$props) $$invalidate(4, today = $$props.today);
-		if ("displayedMonth" in $$props) $$invalidate(5, displayedMonth = $$props.displayedMonth);
-		if ("selectedId" in $$props) $$invalidate(6, selectedId = $$props.selectedId);
+		if ('date' in $$props) $$invalidate(0, date = $$props.date);
+		if ('metadata' in $$props) $$invalidate(7, metadata = $$props.metadata);
+		if ('onHover' in $$props) $$invalidate(1, onHover = $$props.onHover);
+		if ('onClick' in $$props) $$invalidate(2, onClick = $$props.onClick);
+		if ('onContextMenu' in $$props) $$invalidate(3, onContextMenu = $$props.onContextMenu);
+		if ('today' in $$props) $$invalidate(4, today = $$props.today);
+		if ('displayedMonth' in $$props) $$invalidate(5, displayedMonth = $$props.displayedMonth);
+		if ('selectedId' in $$props) $$invalidate(6, selectedId = $$props.selectedId);
 	};
 
 	return [
@@ -3150,32 +3329,68 @@ function instance$4($$self, $$props, $$invalidate) {
 class Day extends SvelteComponent {
 	constructor(options) {
 		super();
-		if (!document.getElementById("svelte-q3wqg9-style")) add_css$4();
 
-		init(this, options, instance$4, create_fragment$4, not_equal, {
-			date: 0,
-			metadata: 7,
-			onHover: 1,
-			onClick: 2,
-			onContextMenu: 3,
-			today: 4,
-			displayedMonth: 5,
-			selectedId: 6
-		});
+		init(
+			this,
+			options,
+			instance$5,
+			create_fragment$5,
+			not_equal,
+			{
+				date: 0,
+				metadata: 7,
+				onHover: 1,
+				onClick: 2,
+				onContextMenu: 3,
+				today: 4,
+				displayedMonth: 5,
+				selectedId: 6
+			},
+			add_css$5
+		);
 	}
 }
 
-/* src/components/Arrow.svelte generated by Svelte v3.35.0 */
-
-function add_css$3() {
-	var style = element("style");
-	style.id = "svelte-156w7na-style";
-	style.textContent = ".arrow.svelte-156w7na.svelte-156w7na{align-items:center;cursor:pointer;display:flex;justify-content:center;width:24px}.arrow.is-mobile.svelte-156w7na.svelte-156w7na{width:32px}.right.svelte-156w7na.svelte-156w7na{transform:rotate(180deg)}.arrow.svelte-156w7na svg.svelte-156w7na{color:var(--color-arrow);height:16px;width:16px}";
-	append(document.head, style);
+const emptyMetadata = {
+    classes: [],
+    dataAttributes: {},
+    dots: [],
+};
+async function combineMetadata(providers, date) {
+    const metadata = await Promise.all(providers.map((provider) => provider(date)));
+    return metadata.reduce((combined, entry) => ({
+        classes: [...combined.classes, ...(entry.classes || [])],
+        dataAttributes: Object.assign(combined.dataAttributes, entry.dataAttributes),
+        dots: [...combined.dots, ...(entry.dots || [])],
+    }), Object.assign(Object.assign({}, emptyMetadata), { dataAttributes: {} }));
+}
+function getDailyMetadata(sources, date) {
+    const providers = [];
+    sources.forEach((source) => {
+        if (source.getDailyMetadata) {
+            providers.push(source.getDailyMetadata);
+        }
+    });
+    return combineMetadata(providers, date);
+}
+function getWeeklyMetadata(sources, date) {
+    const providers = [];
+    sources.forEach((source) => {
+        if (source.getWeeklyMetadata) {
+            providers.push(source.getWeeklyMetadata);
+        }
+    });
+    return combineMetadata(providers, date);
 }
 
-function create_fragment$3(ctx) {
-	let div;
+/* src/ui/isolatedCalendar/Arrow.svelte generated by Svelte v3.59.2 */
+
+function add_css$4(target) {
+	append_styles(target, "svelte-108dnd", ".arrow.svelte-108dnd.svelte-108dnd{align-items:center;background:none;border:0;color:inherit;cursor:pointer;display:flex;justify-content:center;padding:0;width:24px}.arrow.is-mobile.svelte-108dnd.svelte-108dnd{width:32px}.right.svelte-108dnd.svelte-108dnd{transform:rotate(180deg)}.arrow.svelte-108dnd svg.svelte-108dnd{color:var(--color-arrow);height:16px;width:16px}");
+}
+
+function create_fragment$4(ctx) {
+	let button;
 	let svg;
 	let path;
 	let mounted;
@@ -3183,7 +3398,7 @@ function create_fragment$3(ctx) {
 
 	return {
 		c() {
-			div = element("div");
+			button = element("button");
 			svg = svg_element("svg");
 			path = svg_element("path");
 			attr(path, "fill", "currentColor");
@@ -3192,19 +3407,20 @@ function create_fragment$3(ctx) {
 			attr(svg, "role", "img");
 			attr(svg, "xmlns", "http://www.w3.org/2000/svg");
 			attr(svg, "viewBox", "0 0 320 512");
-			attr(svg, "class", "svelte-156w7na");
-			attr(div, "class", "arrow svelte-156w7na");
-			attr(div, "aria-label", /*tooltip*/ ctx[1]);
-			toggle_class(div, "is-mobile", /*isMobile*/ ctx[3]);
-			toggle_class(div, "right", /*direction*/ ctx[2] === "right");
+			attr(svg, "class", "svelte-108dnd");
+			attr(button, "class", "arrow svelte-108dnd");
+			attr(button, "aria-label", /*tooltip*/ ctx[1]);
+			attr(button, "type", "button");
+			toggle_class(button, "is-mobile", /*isMobile*/ ctx[3]);
+			toggle_class(button, "right", /*direction*/ ctx[2] === "right");
 		},
 		m(target, anchor) {
-			insert(target, div, anchor);
-			append(div, svg);
+			insert(target, button, anchor);
+			append(button, svg);
 			append(svg, path);
 
 			if (!mounted) {
-				dispose = listen(div, "click", function () {
+				dispose = listen(button, "click", function () {
 					if (is_function(/*onClick*/ ctx[0])) /*onClick*/ ctx[0].apply(this, arguments);
 				});
 
@@ -3215,35 +3431,33 @@ function create_fragment$3(ctx) {
 			ctx = new_ctx;
 
 			if (dirty & /*tooltip*/ 2) {
-				attr(div, "aria-label", /*tooltip*/ ctx[1]);
+				attr(button, "aria-label", /*tooltip*/ ctx[1]);
 			}
 
 			if (dirty & /*direction*/ 4) {
-				toggle_class(div, "right", /*direction*/ ctx[2] === "right");
+				toggle_class(button, "right", /*direction*/ ctx[2] === "right");
 			}
 		},
 		i: noop,
 		o: noop,
 		d(detaching) {
-			if (detaching) detach(div);
+			if (detaching) detach(button);
 			mounted = false;
 			dispose();
 		}
 	};
 }
 
-function instance$3($$self, $$props, $$invalidate) {
+function instance$4($$self, $$props, $$invalidate) {
 	let { onClick } = $$props;
 	let { tooltip } = $$props;
 	let { direction } = $$props;
-
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let isMobile = window.app.isMobile;
+	let isMobile = Boolean(window.app.isMobile);
 
 	$$self.$$set = $$props => {
-		if ("onClick" in $$props) $$invalidate(0, onClick = $$props.onClick);
-		if ("tooltip" in $$props) $$invalidate(1, tooltip = $$props.tooltip);
-		if ("direction" in $$props) $$invalidate(2, direction = $$props.direction);
+		if ('onClick' in $$props) $$invalidate(0, onClick = $$props.onClick);
+		if ('tooltip' in $$props) $$invalidate(1, tooltip = $$props.tooltip);
+		if ('direction' in $$props) $$invalidate(2, direction = $$props.direction);
 	};
 
 	return [onClick, tooltip, direction, isMobile];
@@ -3252,35 +3466,32 @@ function instance$3($$self, $$props, $$invalidate) {
 class Arrow extends SvelteComponent {
 	constructor(options) {
 		super();
-		if (!document.getElementById("svelte-156w7na-style")) add_css$3();
-		init(this, options, instance$3, create_fragment$3, safe_not_equal, { onClick: 0, tooltip: 1, direction: 2 });
+		init(this, options, instance$4, create_fragment$4, safe_not_equal, { onClick: 0, tooltip: 1, direction: 2 }, add_css$4);
 	}
 }
 
-/* src/components/Nav.svelte generated by Svelte v3.35.0 */
+/* src/ui/isolatedCalendar/Nav.svelte generated by Svelte v3.59.2 */
 
-function add_css$2() {
-	var style = element("style");
-	style.id = "svelte-1vwr9dd-style";
-	style.textContent = ".nav.svelte-1vwr9dd.svelte-1vwr9dd{align-items:center;display:flex;margin:0.6em 0 1em;padding:0 8px;width:100%}.nav.is-mobile.svelte-1vwr9dd.svelte-1vwr9dd{padding:0}.title.svelte-1vwr9dd.svelte-1vwr9dd{color:var(--color-text-title);font-size:1.5em;margin:0}.is-mobile.svelte-1vwr9dd .title.svelte-1vwr9dd{font-size:1.3em}.month.svelte-1vwr9dd.svelte-1vwr9dd{font-weight:500;text-transform:capitalize}.year.svelte-1vwr9dd.svelte-1vwr9dd{color:var(--interactive-accent)}.right-nav.svelte-1vwr9dd.svelte-1vwr9dd{display:flex;justify-content:center;margin-left:auto}.reset-button.svelte-1vwr9dd.svelte-1vwr9dd{cursor:pointer;border-radius:4px;color:var(--text-muted);font-size:0.7em;font-weight:600;letter-spacing:1px;margin:0 4px;padding:0px 4px;text-transform:uppercase}.is-mobile.svelte-1vwr9dd .reset-button.svelte-1vwr9dd{display:none}";
-	append(document.head, style);
+function add_css$3(target) {
+	append_styles(target, "svelte-2p6jjn", ".nav.svelte-2p6jjn.svelte-2p6jjn{align-items:center;display:flex;margin:0.6em 0 1em;padding:0 8px;width:100%}.nav.is-mobile.svelte-2p6jjn.svelte-2p6jjn{padding:0}.title.svelte-2p6jjn.svelte-2p6jjn{color:var(--color-text-title);cursor:pointer;font-size:1.5em;margin:0}.is-mobile.svelte-2p6jjn .title.svelte-2p6jjn{font-size:1.3em}.month.svelte-2p6jjn.svelte-2p6jjn{font-weight:500;text-transform:capitalize}.year.svelte-2p6jjn.svelte-2p6jjn{color:var(--interactive-accent)}.right-nav.svelte-2p6jjn.svelte-2p6jjn{display:flex;justify-content:center;margin-left:auto}.reset-button.svelte-2p6jjn.svelte-2p6jjn{background:none;border:0;border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:0.7em;font-weight:600;letter-spacing:1px;margin:0 4px;padding:0 4px;text-transform:uppercase}.is-mobile.svelte-2p6jjn .reset-button.svelte-2p6jjn{display:none}");
 }
 
-function create_fragment$2(ctx) {
-	let div2;
+function create_fragment$3(ctx) {
+	let div1;
 	let h3;
 	let span0;
-	let t0_value = /*displayedMonth*/ ctx[0].format("MMM") + "";
+	let t0_value = /*localizedDisplayedMonth*/ ctx[3].format("MMM") + "";
 	let t0;
 	let t1;
 	let span1;
-	let t2_value = /*displayedMonth*/ ctx[0].format("YYYY") + "";
+	let t2_value = /*localizedDisplayedMonth*/ ctx[3].format("YYYY") + "";
 	let t2;
 	let t3;
-	let div1;
+	let div0;
 	let arrow0;
 	let t4;
-	let div0;
+	let button;
+	let t5;
 	let t6;
 	let arrow1;
 	let current;
@@ -3290,22 +3501,22 @@ function create_fragment$2(ctx) {
 	arrow0 = new Arrow({
 			props: {
 				direction: "left",
-				onClick: /*decrementDisplayedMonth*/ ctx[3],
-				tooltip: "Previous Month"
+				onClick: /*decrementDisplayedMonth*/ ctx[2],
+				tooltip: "Previous month"
 			}
 		});
 
 	arrow1 = new Arrow({
 			props: {
 				direction: "right",
-				onClick: /*incrementDisplayedMonth*/ ctx[2],
-				tooltip: "Next Month"
+				onClick: /*incrementDisplayedMonth*/ ctx[1],
+				tooltip: "Next month"
 			}
 		});
 
 	return {
 		c() {
-			div2 = element("div");
+			div1 = element("div");
 			h3 = element("h3");
 			span0 = element("span");
 			t0 = text(t0_value);
@@ -3313,45 +3524,50 @@ function create_fragment$2(ctx) {
 			span1 = element("span");
 			t2 = text(t2_value);
 			t3 = space();
-			div1 = element("div");
+			div0 = element("div");
 			create_component(arrow0.$$.fragment);
 			t4 = space();
-			div0 = element("div");
-			div0.textContent = `${/*todayDisplayStr*/ ctx[4]}`;
+			button = element("button");
+			t5 = text(/*todayDisplayText*/ ctx[4]);
 			t6 = space();
 			create_component(arrow1.$$.fragment);
-			attr(span0, "class", "month svelte-1vwr9dd");
-			attr(span1, "class", "year svelte-1vwr9dd");
-			attr(h3, "class", "title svelte-1vwr9dd");
-			attr(div0, "class", "reset-button svelte-1vwr9dd");
-			attr(div1, "class", "right-nav svelte-1vwr9dd");
-			attr(div2, "class", "nav svelte-1vwr9dd");
-			toggle_class(div2, "is-mobile", /*isMobile*/ ctx[5]);
+			attr(span0, "class", "month svelte-2p6jjn");
+			attr(span1, "class", "year svelte-2p6jjn");
+			attr(h3, "class", "title svelte-2p6jjn");
+			attr(h3, "role", "button");
+			attr(h3, "tabindex", "0");
+			attr(button, "class", "reset-button svelte-2p6jjn");
+			attr(button, "type", "button");
+			attr(div0, "class", "right-nav svelte-2p6jjn");
+			attr(div1, "class", "nav svelte-2p6jjn");
+			toggle_class(div1, "is-mobile", /*isMobile*/ ctx[5]);
 		},
 		m(target, anchor) {
-			insert(target, div2, anchor);
-			append(div2, h3);
+			insert(target, div1, anchor);
+			append(div1, h3);
 			append(h3, span0);
 			append(span0, t0);
 			append(h3, t1);
 			append(h3, span1);
 			append(span1, t2);
-			append(div2, t3);
-			append(div2, div1);
-			mount_component(arrow0, div1, null);
-			append(div1, t4);
+			append(div1, t3);
 			append(div1, div0);
-			append(div1, t6);
-			mount_component(arrow1, div1, null);
+			mount_component(arrow0, div0, null);
+			append(div0, t4);
+			append(div0, button);
+			append(button, t5);
+			append(div0, t6);
+			mount_component(arrow1, div0, null);
 			current = true;
 
 			if (!mounted) {
 				dispose = [
 					listen(h3, "click", function () {
-						if (is_function(/*resetDisplayedMonth*/ ctx[1])) /*resetDisplayedMonth*/ ctx[1].apply(this, arguments);
+						if (is_function(/*resetDisplayedMonth*/ ctx[0])) /*resetDisplayedMonth*/ ctx[0].apply(this, arguments);
 					}),
-					listen(div0, "click", function () {
-						if (is_function(/*resetDisplayedMonth*/ ctx[1])) /*resetDisplayedMonth*/ ctx[1].apply(this, arguments);
+					listen(h3, "keydown", /*resetOnKeyboard*/ ctx[6]),
+					listen(button, "click", function () {
+						if (is_function(/*resetDisplayedMonth*/ ctx[0])) /*resetDisplayedMonth*/ ctx[0].apply(this, arguments);
 					})
 				];
 
@@ -3360,13 +3576,14 @@ function create_fragment$2(ctx) {
 		},
 		p(new_ctx, [dirty]) {
 			ctx = new_ctx;
-			if ((!current || dirty & /*displayedMonth*/ 1) && t0_value !== (t0_value = /*displayedMonth*/ ctx[0].format("MMM") + "")) set_data(t0, t0_value);
-			if ((!current || dirty & /*displayedMonth*/ 1) && t2_value !== (t2_value = /*displayedMonth*/ ctx[0].format("YYYY") + "")) set_data(t2, t2_value);
+			if ((!current || dirty & /*localizedDisplayedMonth*/ 8) && t0_value !== (t0_value = /*localizedDisplayedMonth*/ ctx[3].format("MMM") + "")) set_data(t0, t0_value);
+			if ((!current || dirty & /*localizedDisplayedMonth*/ 8) && t2_value !== (t2_value = /*localizedDisplayedMonth*/ ctx[3].format("YYYY") + "")) set_data(t2, t2_value);
 			const arrow0_changes = {};
-			if (dirty & /*decrementDisplayedMonth*/ 8) arrow0_changes.onClick = /*decrementDisplayedMonth*/ ctx[3];
+			if (dirty & /*decrementDisplayedMonth*/ 4) arrow0_changes.onClick = /*decrementDisplayedMonth*/ ctx[2];
 			arrow0.$set(arrow0_changes);
+			if (!current || dirty & /*todayDisplayText*/ 16) set_data(t5, /*todayDisplayText*/ ctx[4]);
 			const arrow1_changes = {};
-			if (dirty & /*incrementDisplayedMonth*/ 4) arrow1_changes.onClick = /*incrementDisplayedMonth*/ ctx[2];
+			if (dirty & /*incrementDisplayedMonth*/ 2) arrow1_changes.onClick = /*incrementDisplayedMonth*/ ctx[1];
 			arrow1.$set(arrow1_changes);
 		},
 		i(local) {
@@ -3381,7 +3598,7 @@ function create_fragment$2(ctx) {
 			current = false;
 		},
 		d(detaching) {
-			if (detaching) detach(div2);
+			if (detaching) detach(div1);
 			destroy_component(arrow0);
 			destroy_component(arrow1);
 			mounted = false;
@@ -3390,66 +3607,95 @@ function create_fragment$2(ctx) {
 	};
 }
 
-function instance$2($$self, $$props, $$invalidate) {
-	
+function instance$3($$self, $$props, $$invalidate) {
 	let { displayedMonth } = $$props;
 	let { today } = $$props;
+	let { locale } = $$props;
 	let { resetDisplayedMonth } = $$props;
 	let { incrementDisplayedMonth } = $$props;
 	let { decrementDisplayedMonth } = $$props;
+	let localizedToday;
+	let localizedDisplayedMonth;
+	let todayDisplayText;
+	let isMobile = Boolean(window.app.isMobile);
 
-	// Get the word 'Today' but localized to the current language
-	const todayDisplayStr = today.calendar().split(/\d|\s/)[0];
-
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let isMobile = window.app.isMobile;
+	function resetOnKeyboard(event) {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			resetDisplayedMonth();
+		}
+	}
 
 	$$self.$$set = $$props => {
-		if ("displayedMonth" in $$props) $$invalidate(0, displayedMonth = $$props.displayedMonth);
-		if ("today" in $$props) $$invalidate(6, today = $$props.today);
-		if ("resetDisplayedMonth" in $$props) $$invalidate(1, resetDisplayedMonth = $$props.resetDisplayedMonth);
-		if ("incrementDisplayedMonth" in $$props) $$invalidate(2, incrementDisplayedMonth = $$props.incrementDisplayedMonth);
-		if ("decrementDisplayedMonth" in $$props) $$invalidate(3, decrementDisplayedMonth = $$props.decrementDisplayedMonth);
+		if ('displayedMonth' in $$props) $$invalidate(7, displayedMonth = $$props.displayedMonth);
+		if ('today' in $$props) $$invalidate(8, today = $$props.today);
+		if ('locale' in $$props) $$invalidate(9, locale = $$props.locale);
+		if ('resetDisplayedMonth' in $$props) $$invalidate(0, resetDisplayedMonth = $$props.resetDisplayedMonth);
+		if ('incrementDisplayedMonth' in $$props) $$invalidate(1, incrementDisplayedMonth = $$props.incrementDisplayedMonth);
+		if ('decrementDisplayedMonth' in $$props) $$invalidate(2, decrementDisplayedMonth = $$props.decrementDisplayedMonth);
+	};
+
+	$$self.$$.update = () => {
+		if ($$self.$$.dirty & /*today, locale*/ 768) {
+			$$invalidate(10, localizedToday = withCalendarLocale(today, locale));
+		}
+
+		if ($$self.$$.dirty & /*displayedMonth, locale*/ 640) {
+			$$invalidate(3, localizedDisplayedMonth = withCalendarLocale(displayedMonth, locale));
+		}
+
+		if ($$self.$$.dirty & /*localizedToday*/ 1024) {
+			$$invalidate(4, todayDisplayText = localizedToday.calendar().split(/\d|\s/)[0]);
+		}
 	};
 
 	return [
-		displayedMonth,
 		resetDisplayedMonth,
 		incrementDisplayedMonth,
 		decrementDisplayedMonth,
-		todayDisplayStr,
+		localizedDisplayedMonth,
+		todayDisplayText,
 		isMobile,
-		today
+		resetOnKeyboard,
+		displayedMonth,
+		today,
+		locale,
+		localizedToday
 	];
 }
 
 class Nav extends SvelteComponent {
 	constructor(options) {
 		super();
-		if (!document.getElementById("svelte-1vwr9dd-style")) add_css$2();
 
-		init(this, options, instance$2, create_fragment$2, safe_not_equal, {
-			displayedMonth: 0,
-			today: 6,
-			resetDisplayedMonth: 1,
-			incrementDisplayedMonth: 2,
-			decrementDisplayedMonth: 3
-		});
+		init(
+			this,
+			options,
+			instance$3,
+			create_fragment$3,
+			safe_not_equal,
+			{
+				displayedMonth: 7,
+				today: 8,
+				locale: 9,
+				resetDisplayedMonth: 0,
+				incrementDisplayedMonth: 1,
+				decrementDisplayedMonth: 2
+			},
+			add_css$3
+		);
 	}
 }
 
-/* src/components/WeekNum.svelte generated by Svelte v3.35.0 */
+/* src/ui/isolatedCalendar/WeekNum.svelte generated by Svelte v3.59.2 */
 
-function add_css$1() {
-	var style = element("style");
-	style.id = "svelte-egt0yd-style";
-	style.textContent = "td.svelte-egt0yd{border-right:1px solid var(--background-modifier-border)}.week-num.svelte-egt0yd{background-color:var(--color-background-weeknum);border-radius:4px;color:var(--color-text-weeknum);cursor:pointer;font-size:0.65em;height:100%;padding:4px;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:baseline}.week-num.svelte-egt0yd:hover{background-color:var(--interactive-hover)}.week-num.active.svelte-egt0yd:hover{background-color:var(--interactive-accent-hover)}.active.svelte-egt0yd{color:var(--text-on-accent);background-color:var(--interactive-accent)}.dot-container.svelte-egt0yd{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}";
-	append(document.head, style);
+function add_css$2(target) {
+	append_styles(target, "svelte-1n7oev1", "td.svelte-1n7oev1{border-right:1px solid var(--background-modifier-border)}.week-num.svelte-1n7oev1{background-color:var(--color-background-weeknum);border-radius:4px;color:var(--color-text-weeknum);cursor:pointer;font-size:0.65em;height:100%;padding:4px;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:baseline}.week-num.svelte-1n7oev1:hover{background-color:var(--interactive-hover)}.week-num.active.svelte-1n7oev1:hover{background-color:var(--interactive-accent-hover)}.active.svelte-1n7oev1{background-color:var(--interactive-accent);color:var(--text-on-accent)}.dot-container.svelte-1n7oev1{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}");
 }
 
 function get_each_context$1(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[11] = list[i];
+	child_ctx[12] = list[i];
 	return child_ctx;
 }
 
@@ -3457,7 +3703,14 @@ function get_each_context$1(ctx, list, i) {
 function create_each_block$1(ctx) {
 	let dot;
 	let current;
-	const dot_spread_levels = [/*dot*/ ctx[11]];
+
+	const dot_spread_levels = [
+		/*dot*/ ctx[12],
+		{
+			isActive: /*selectedId*/ ctx[6] === getCalendarWeekUID(/*days*/ ctx[1][0], /*weekStart*/ ctx[2])
+		}
+	];
+
 	let dot_props = {};
 
 	for (let i = 0; i < dot_spread_levels.length; i += 1) {
@@ -3475,8 +3728,13 @@ function create_each_block$1(ctx) {
 			current = true;
 		},
 		p(ctx, dirty) {
-			const dot_changes = (dirty & /*metadata*/ 64)
-			? get_spread_update(dot_spread_levels, [get_spread_object(/*dot*/ ctx[11])])
+			const dot_changes = (dirty & /*metadata, selectedId, getCalendarWeekUID, days, weekStart*/ 198)
+			? get_spread_update(dot_spread_levels, [
+					dirty & /*metadata*/ 128 && get_spread_object(/*dot*/ ctx[12]),
+					dirty & /*selectedId, getCalendarWeekUID, days, weekStart*/ 70 && {
+						isActive: /*selectedId*/ ctx[6] === getCalendarWeekUID(/*days*/ ctx[1][0], /*weekStart*/ ctx[2])
+					}
+				])
 			: {};
 
 			dot.$set(dot_changes);
@@ -3496,7 +3754,7 @@ function create_each_block$1(ctx) {
 	};
 }
 
-// (24:2) <MetadataResolver metadata="{metadata}" let:metadata>
+// (22:2) <MetadataResolver {metadata} let:metadata>
 function create_default_slot(ctx) {
 	let div1;
 	let t0;
@@ -3506,7 +3764,7 @@ function create_default_slot(ctx) {
 	let current;
 	let mounted;
 	let dispose;
-	let each_value = /*metadata*/ ctx[6].dots;
+	let each_value = /*metadata*/ ctx[7].dots;
 	let each_blocks = [];
 
 	for (let i = 0; i < each_value.length; i += 1) {
@@ -3516,6 +3774,19 @@ function create_default_slot(ctx) {
 	const out = i => transition_out(each_blocks[i], 1, 1, () => {
 		each_blocks[i] = null;
 	});
+
+	let div1_levels = [
+		{
+			class: div1_class_value = `week-num ${/*metadata*/ ctx[7].classes.join(" ")}`
+		},
+		/*metadata*/ ctx[7].dataAttributes
+	];
+
+	let div_data_1 = {};
+
+	for (let i = 0; i < div1_levels.length; i += 1) {
+		div_data_1 = assign(div_data_1, div1_levels[i]);
+	}
 
 	return {
 		c() {
@@ -3528,9 +3799,10 @@ function create_default_slot(ctx) {
 				each_blocks[i].c();
 			}
 
-			attr(div0, "class", "dot-container svelte-egt0yd");
-			attr(div1, "class", div1_class_value = "" + (null_to_empty(`week-num ${/*metadata*/ ctx[6].classes.join(" ")}`) + " svelte-egt0yd"));
-			toggle_class(div1, "active", /*selectedId*/ ctx[5] === getDateUID_1(/*days*/ ctx[1][0], "week"));
+			attr(div0, "class", "dot-container svelte-1n7oev1");
+			set_attributes(div1, div_data_1);
+			toggle_class(div1, "active", /*selectedId*/ ctx[6] === getCalendarWeekUID(/*days*/ ctx[1][0], /*weekStart*/ ctx[2]));
+			toggle_class(div1, "svelte-1n7oev1", true);
 		},
 		m(target, anchor) {
 			insert(target, div1, anchor);
@@ -3539,7 +3811,9 @@ function create_default_slot(ctx) {
 			append(div1, div0);
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
-				each_blocks[i].m(div0, null);
+				if (each_blocks[i]) {
+					each_blocks[i].m(div0, null);
+				}
 			}
 
 			current = true;
@@ -3547,13 +3821,13 @@ function create_default_slot(ctx) {
 			if (!mounted) {
 				dispose = [
 					listen(div1, "click", function () {
-						if (is_function(/*onClick*/ ctx[3] && /*click_handler*/ ctx[8])) (/*onClick*/ ctx[3] && /*click_handler*/ ctx[8]).apply(this, arguments);
+						if (is_function(/*onClick*/ ctx[4] && /*click_handler*/ ctx[9])) (/*onClick*/ ctx[4] && /*click_handler*/ ctx[9]).apply(this, arguments);
 					}),
 					listen(div1, "contextmenu", function () {
-						if (is_function(/*onContextMenu*/ ctx[4] && /*contextmenu_handler*/ ctx[9])) (/*onContextMenu*/ ctx[4] && /*contextmenu_handler*/ ctx[9]).apply(this, arguments);
+						if (is_function(/*onContextMenu*/ ctx[5] && /*contextmenu_handler*/ ctx[10])) (/*onContextMenu*/ ctx[5] && /*contextmenu_handler*/ ctx[10]).apply(this, arguments);
 					}),
 					listen(div1, "pointerover", function () {
-						if (is_function(/*onHover*/ ctx[2] && /*pointerover_handler*/ ctx[10])) (/*onHover*/ ctx[2] && /*pointerover_handler*/ ctx[10]).apply(this, arguments);
+						if (is_function(/*onHover*/ ctx[3] && /*pointerover_handler*/ ctx[11])) (/*onHover*/ ctx[3] && /*pointerover_handler*/ ctx[11]).apply(this, arguments);
 					})
 				];
 
@@ -3562,10 +3836,10 @@ function create_default_slot(ctx) {
 		},
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
-			if (!current || dirty & /*weekNum*/ 1) set_data(t0, /*weekNum*/ ctx[0]);
+			if (!current || dirty & /*weekNum*/ 1) set_data_maybe_contenteditable(t0, /*weekNum*/ ctx[0], div_data_1['contenteditable']);
 
-			if (dirty & /*metadata*/ 64) {
-				each_value = /*metadata*/ ctx[6].dots;
+			if (dirty & /*metadata, selectedId, getCalendarWeekUID, days, weekStart*/ 198) {
+				each_value = /*metadata*/ ctx[7].dots;
 				let i;
 
 				for (i = 0; i < each_value.length; i += 1) {
@@ -3591,13 +3865,13 @@ function create_default_slot(ctx) {
 				check_outros();
 			}
 
-			if (!current || dirty & /*metadata*/ 64 && div1_class_value !== (div1_class_value = "" + (null_to_empty(`week-num ${/*metadata*/ ctx[6].classes.join(" ")}`) + " svelte-egt0yd"))) {
-				attr(div1, "class", div1_class_value);
-			}
+			set_attributes(div1, div_data_1 = get_spread_update(div1_levels, [
+				(!current || dirty & /*metadata*/ 128 && div1_class_value !== (div1_class_value = `week-num ${/*metadata*/ ctx[7].classes.join(" ")}`)) && { class: div1_class_value },
+				dirty & /*metadata*/ 128 && /*metadata*/ ctx[7].dataAttributes
+			]));
 
-			if (dirty & /*metadata, selectedId, getDateUID, days*/ 98) {
-				toggle_class(div1, "active", /*selectedId*/ ctx[5] === getDateUID_1(/*days*/ ctx[1][0], "week"));
-			}
+			toggle_class(div1, "active", /*selectedId*/ ctx[6] === getCalendarWeekUID(/*days*/ ctx[1][0], /*weekStart*/ ctx[2]));
+			toggle_class(div1, "svelte-1n7oev1", true);
 		},
 		i(local) {
 			if (current) return;
@@ -3626,19 +3900,19 @@ function create_default_slot(ctx) {
 	};
 }
 
-function create_fragment$1(ctx) {
+function create_fragment$2(ctx) {
 	let td;
 	let metadataresolver;
 	let current;
 
 	metadataresolver = new MetadataResolver({
 			props: {
-				metadata: /*metadata*/ ctx[6],
+				metadata: /*metadata*/ ctx[7],
 				$$slots: {
 					default: [
 						create_default_slot,
-						({ metadata }) => ({ 6: metadata }),
-						({ metadata }) => metadata ? 64 : 0
+						({ metadata }) => ({ 7: metadata }),
+						({ metadata }) => metadata ? 128 : 0
 					]
 				},
 				$$scope: { ctx }
@@ -3649,7 +3923,7 @@ function create_fragment$1(ctx) {
 		c() {
 			td = element("td");
 			create_component(metadataresolver.$$.fragment);
-			attr(td, "class", "svelte-egt0yd");
+			attr(td, "class", "svelte-1n7oev1");
 		},
 		m(target, anchor) {
 			insert(target, td, anchor);
@@ -3658,9 +3932,9 @@ function create_fragment$1(ctx) {
 		},
 		p(ctx, [dirty]) {
 			const metadataresolver_changes = {};
-			if (dirty & /*metadata*/ 64) metadataresolver_changes.metadata = /*metadata*/ ctx[6];
+			if (dirty & /*metadata*/ 128) metadataresolver_changes.metadata = /*metadata*/ ctx[7];
 
-			if (dirty & /*$$scope, metadata, selectedId, days, onClick, startOfWeek, onContextMenu, onHover, weekNum*/ 16639) {
+			if (dirty & /*$$scope, metadata, selectedId, days, weekStart, onClick, startOfWeek, onContextMenu, onHover, weekNum*/ 33279) {
 				metadataresolver_changes.$$scope = { dirty, ctx };
 			}
 
@@ -3682,40 +3956,47 @@ function create_fragment$1(ctx) {
 	};
 }
 
-function instance$1($$self, $$props, $$invalidate) {
-	
-	
+function isMetaPressed(event) {
+	return navigator.platform.includes("Mac")
+	? event.metaKey
+	: event.ctrlKey;
+}
+
+function instance$2($$self, $$props, $$invalidate) {
 	let { weekNum } = $$props;
 	let { days } = $$props;
 	let { metadata } = $$props;
+	let { weekStart } = $$props;
 	let { onHover } = $$props;
 	let { onClick } = $$props;
 	let { onContextMenu } = $$props;
 	let { selectedId = null } = $$props;
 	let startOfWeek;
-	const click_handler = e => onClick(startOfWeek, isMetaPressed(e));
-	const contextmenu_handler = e => onContextMenu(days[0], e);
-	const pointerover_handler = e => onHover(startOfWeek, e.target, isMetaPressed(e));
+	const click_handler = event => onClick(startOfWeek, isMetaPressed(event));
+	const contextmenu_handler = event => onContextMenu(days[0], event);
+	const pointerover_handler = event => onHover(startOfWeek, event.target, isMetaPressed(event));
 
 	$$self.$$set = $$props => {
-		if ("weekNum" in $$props) $$invalidate(0, weekNum = $$props.weekNum);
-		if ("days" in $$props) $$invalidate(1, days = $$props.days);
-		if ("metadata" in $$props) $$invalidate(6, metadata = $$props.metadata);
-		if ("onHover" in $$props) $$invalidate(2, onHover = $$props.onHover);
-		if ("onClick" in $$props) $$invalidate(3, onClick = $$props.onClick);
-		if ("onContextMenu" in $$props) $$invalidate(4, onContextMenu = $$props.onContextMenu);
-		if ("selectedId" in $$props) $$invalidate(5, selectedId = $$props.selectedId);
+		if ('weekNum' in $$props) $$invalidate(0, weekNum = $$props.weekNum);
+		if ('days' in $$props) $$invalidate(1, days = $$props.days);
+		if ('metadata' in $$props) $$invalidate(7, metadata = $$props.metadata);
+		if ('weekStart' in $$props) $$invalidate(2, weekStart = $$props.weekStart);
+		if ('onHover' in $$props) $$invalidate(3, onHover = $$props.onHover);
+		if ('onClick' in $$props) $$invalidate(4, onClick = $$props.onClick);
+		if ('onContextMenu' in $$props) $$invalidate(5, onContextMenu = $$props.onContextMenu);
+		if ('selectedId' in $$props) $$invalidate(6, selectedId = $$props.selectedId);
 	};
 
 	$$self.$$.update = () => {
-		if ($$self.$$.dirty & /*days*/ 2) {
-			$$invalidate(7, startOfWeek = getStartOfWeek(days));
+		if ($$self.$$.dirty & /*days, weekStart*/ 6) {
+			$$invalidate(8, startOfWeek = getCalendarWeekStart(days[0], weekStart));
 		}
 	};
 
 	return [
 		weekNum,
 		days,
+		weekStart,
 		onHover,
 		onClick,
 		onContextMenu,
@@ -3731,74 +4012,59 @@ function instance$1($$self, $$props, $$invalidate) {
 class WeekNum extends SvelteComponent {
 	constructor(options) {
 		super();
-		if (!document.getElementById("svelte-egt0yd-style")) add_css$1();
 
-		init(this, options, instance$1, create_fragment$1, not_equal, {
-			weekNum: 0,
-			days: 1,
-			metadata: 6,
-			onHover: 2,
-			onClick: 3,
-			onContextMenu: 4,
-			selectedId: 5
-		});
+		init(
+			this,
+			options,
+			instance$2,
+			create_fragment$2,
+			not_equal,
+			{
+				weekNum: 0,
+				days: 1,
+				metadata: 7,
+				weekStart: 2,
+				onHover: 3,
+				onClick: 4,
+				onContextMenu: 5,
+				selectedId: 6
+			},
+			add_css$2
+		);
 	}
 }
 
-async function metadataReducer(promisedMetadata) {
-    const meta = {
-        dots: [],
-        classes: [],
-        dataAttributes: {},
-    };
-    const metas = await Promise.all(promisedMetadata);
-    return metas.reduce((acc, meta) => ({
-        classes: [...acc.classes, ...(meta.classes || [])],
-        dataAttributes: Object.assign(acc.dataAttributes, meta.dataAttributes),
-        dots: [...acc.dots, ...(meta.dots || [])],
-    }), meta);
-}
-function getDailyMetadata(sources, date, ..._args) {
-    return metadataReducer(sources.map((source) => source.getDailyMetadata(date)));
-}
-function getWeeklyMetadata(sources, date, ..._args) {
-    return metadataReducer(sources.map((source) => source.getWeeklyMetadata(date)));
-}
+/* src/ui/isolatedCalendar/Calendar.svelte generated by Svelte v3.59.2 */
 
-/* src/components/Calendar.svelte generated by Svelte v3.35.0 */
-
-function add_css$6() {
-	var style = element("style");
-	style.id = "svelte-pcimu8-style";
-	style.textContent = ".container.svelte-pcimu8{--color-background-heading:transparent;--color-background-day:transparent;--color-background-weeknum:transparent;--color-background-weekend:transparent;--color-dot:var(--text-muted);--color-arrow:var(--text-muted);--color-button:var(--text-muted);--color-text-title:var(--text-normal);--color-text-heading:var(--text-muted);--color-text-day:var(--text-normal);--color-text-today:var(--interactive-accent);--color-text-weeknum:var(--text-muted)}.container.svelte-pcimu8{padding:0 8px}.container.is-mobile.svelte-pcimu8{padding:0}th.svelte-pcimu8{text-align:center}.weekend.svelte-pcimu8{background-color:var(--color-background-weekend)}.calendar.svelte-pcimu8{border-collapse:collapse;width:100%}th.svelte-pcimu8{background-color:var(--color-background-heading);color:var(--color-text-heading);font-size:0.6em;letter-spacing:1px;padding:4px;text-transform:uppercase}";
-	append(document.head, style);
+function add_css$1(target) {
+	append_styles(target, "svelte-pcimu8", ".container.svelte-pcimu8{--color-background-heading:transparent;--color-background-day:transparent;--color-background-weeknum:transparent;--color-background-weekend:transparent;--color-dot:var(--text-muted);--color-arrow:var(--text-muted);--color-button:var(--text-muted);--color-text-title:var(--text-normal);--color-text-heading:var(--text-muted);--color-text-day:var(--text-normal);--color-text-today:var(--interactive-accent);--color-text-weeknum:var(--text-muted)}.container.svelte-pcimu8{padding:0 8px}.container.is-mobile.svelte-pcimu8{padding:0}th.svelte-pcimu8{text-align:center}.weekend.svelte-pcimu8{background-color:var(--color-background-weekend)}.calendar.svelte-pcimu8{border-collapse:collapse;width:100%}th.svelte-pcimu8{background-color:var(--color-background-heading);color:var(--color-text-heading);font-size:0.6em;letter-spacing:1px;padding:4px;text-transform:uppercase}");
 }
 
 function get_each_context(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[18] = list[i];
+	child_ctx[25] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_1(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[21] = list[i];
+	child_ctx[28] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_2(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[24] = list[i];
+	child_ctx[31] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_3(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[27] = list[i];
+	child_ctx[28] = list[i];
 	return child_ctx;
 }
 
-// (55:6) {#if showWeekNums}
+// (64:6) {#if showWeekNums}
 function create_if_block_2(ctx) {
 	let col;
 
@@ -3815,7 +4081,7 @@ function create_if_block_2(ctx) {
 	};
 }
 
-// (58:6) {#each month[1].days as date}
+// (67:6) {#each month[0].days as date}
 function create_each_block_3(ctx) {
 	let col;
 
@@ -3823,14 +4089,14 @@ function create_each_block_3(ctx) {
 		c() {
 			col = element("col");
 			attr(col, "class", "svelte-pcimu8");
-			toggle_class(col, "weekend", isWeekend(/*date*/ ctx[27]));
+			toggle_class(col, "weekend", isWeekend(/*date*/ ctx[28]));
 		},
 		m(target, anchor) {
 			insert(target, col, anchor);
 		},
 		p(ctx, dirty) {
-			if (dirty & /*isWeekend, month*/ 16384) {
-				toggle_class(col, "weekend", isWeekend(/*date*/ ctx[27]));
+			if (dirty[0] & /*month*/ 65536) {
+				toggle_class(col, "weekend", isWeekend(/*date*/ ctx[28]));
 			}
 		},
 		d(detaching) {
@@ -3839,7 +4105,7 @@ function create_each_block_3(ctx) {
 	};
 }
 
-// (64:8) {#if showWeekNums}
+// (73:8) {#if showWeekNums}
 function create_if_block_1(ctx) {
 	let th;
 
@@ -3858,10 +4124,10 @@ function create_if_block_1(ctx) {
 	};
 }
 
-// (67:8) {#each daysOfWeek as dayOfWeek}
+// (76:8) {#each daysOfWeek as dayOfWeek}
 function create_each_block_2(ctx) {
 	let th;
-	let t_value = /*dayOfWeek*/ ctx[24] + "";
+	let t_value = /*dayOfWeek*/ ctx[31] + "";
 	let t;
 
 	return {
@@ -3875,7 +4141,7 @@ function create_each_block_2(ctx) {
 			append(th, t);
 		},
 		p(ctx, dirty) {
-			if (dirty & /*daysOfWeek*/ 32768 && t_value !== (t_value = /*dayOfWeek*/ ctx[24] + "")) set_data(t, t_value);
+			if (dirty[0] & /*daysOfWeek*/ 131072 && t_value !== (t_value = /*dayOfWeek*/ ctx[31] + "")) set_data(t, t_value);
 		},
 		d(detaching) {
 			if (detaching) detach(th);
@@ -3883,22 +4149,23 @@ function create_each_block_2(ctx) {
 	};
 }
 
-// (75:10) {#if showWeekNums}
+// (84:10) {#if showWeekNums}
 function create_if_block(ctx) {
 	let weeknum;
 	let current;
 
 	const weeknum_spread_levels = [
-		/*week*/ ctx[18],
+		/*week*/ ctx[25],
+		{ weekStart: /*weekStartIndex*/ ctx[13] },
 		{
-			metadata: getWeeklyMetadata(/*sources*/ ctx[8], /*week*/ ctx[18].days[0], /*today*/ ctx[10])
+			metadata: getWeeklyMetadata(/*sources*/ ctx[7], /*week*/ ctx[25].days[0])
 		},
-		{ onClick: /*onClickWeek*/ ctx[7] },
+		{ onClick: /*onClickWeek*/ ctx[6] },
 		{
-			onContextMenu: /*onContextMenuWeek*/ ctx[5]
+			onContextMenu: /*onContextMenuWeek*/ ctx[4]
 		},
-		{ onHover: /*onHoverWeek*/ ctx[3] },
-		{ selectedId: /*selectedId*/ ctx[9] }
+		{ onHover: /*onHoverWeek*/ ctx[2] },
+		{ selectedId: /*selectedId*/ ctx[8] }
 	];
 
 	let weeknum_props = {};
@@ -3918,18 +4185,19 @@ function create_if_block(ctx) {
 			current = true;
 		},
 		p(ctx, dirty) {
-			const weeknum_changes = (dirty & /*month, getWeeklyMetadata, sources, today, onClickWeek, onContextMenuWeek, onHoverWeek, selectedId*/ 18344)
+			const weeknum_changes = (dirty[0] & /*month, weekStartIndex, sources, onClickWeek, onContextMenuWeek, onHoverWeek, selectedId*/ 74196)
 			? get_spread_update(weeknum_spread_levels, [
-					dirty & /*month*/ 16384 && get_spread_object(/*week*/ ctx[18]),
-					dirty & /*getWeeklyMetadata, sources, month, today*/ 17664 && {
-						metadata: getWeeklyMetadata(/*sources*/ ctx[8], /*week*/ ctx[18].days[0], /*today*/ ctx[10])
+					dirty[0] & /*month*/ 65536 && get_spread_object(/*week*/ ctx[25]),
+					dirty[0] & /*weekStartIndex*/ 8192 && { weekStart: /*weekStartIndex*/ ctx[13] },
+					dirty[0] & /*sources, month*/ 65664 && {
+						metadata: getWeeklyMetadata(/*sources*/ ctx[7], /*week*/ ctx[25].days[0])
 					},
-					dirty & /*onClickWeek*/ 128 && { onClick: /*onClickWeek*/ ctx[7] },
-					dirty & /*onContextMenuWeek*/ 32 && {
-						onContextMenu: /*onContextMenuWeek*/ ctx[5]
+					dirty[0] & /*onClickWeek*/ 64 && { onClick: /*onClickWeek*/ ctx[6] },
+					dirty[0] & /*onContextMenuWeek*/ 16 && {
+						onContextMenu: /*onContextMenuWeek*/ ctx[4]
 					},
-					dirty & /*onHoverWeek*/ 8 && { onHover: /*onHoverWeek*/ ctx[3] },
-					dirty & /*selectedId*/ 512 && { selectedId: /*selectedId*/ ctx[9] }
+					dirty[0] & /*onHoverWeek*/ 4 && { onHover: /*onHoverWeek*/ ctx[2] },
+					dirty[0] & /*selectedId*/ 256 && { selectedId: /*selectedId*/ ctx[8] }
 				])
 			: {};
 
@@ -3950,7 +4218,7 @@ function create_if_block(ctx) {
 	};
 }
 
-// (85:10) {#each week.days as day (day.format())}
+// (95:10) {#each week.days as date (date.format())}
 function create_each_block_1(key_1, ctx) {
 	let first;
 	let day;
@@ -3958,14 +4226,14 @@ function create_each_block_1(key_1, ctx) {
 
 	day = new Day({
 			props: {
-				date: /*day*/ ctx[21],
-				today: /*today*/ ctx[10],
-				displayedMonth: /*displayedMonth*/ ctx[0],
-				onClick: /*onClickDay*/ ctx[6],
-				onContextMenu: /*onContextMenuDay*/ ctx[4],
-				onHover: /*onHoverDay*/ ctx[2],
-				metadata: getDailyMetadata(/*sources*/ ctx[8], /*day*/ ctx[21], /*today*/ ctx[10]),
-				selectedId: /*selectedId*/ ctx[9]
+				date: /*date*/ ctx[28],
+				today: /*localizedToday*/ ctx[14],
+				displayedMonth: /*localizedDisplayedMonth*/ ctx[15],
+				onClick: /*onClickDay*/ ctx[5],
+				onContextMenu: /*onContextMenuDay*/ ctx[3],
+				onHover: /*onHoverDay*/ ctx[1],
+				metadata: getDailyMetadata(/*sources*/ ctx[7], /*date*/ ctx[28]),
+				selectedId: /*selectedId*/ ctx[8]
 			}
 		});
 
@@ -3985,14 +4253,14 @@ function create_each_block_1(key_1, ctx) {
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
 			const day_changes = {};
-			if (dirty & /*month*/ 16384) day_changes.date = /*day*/ ctx[21];
-			if (dirty & /*today*/ 1024) day_changes.today = /*today*/ ctx[10];
-			if (dirty & /*displayedMonth*/ 1) day_changes.displayedMonth = /*displayedMonth*/ ctx[0];
-			if (dirty & /*onClickDay*/ 64) day_changes.onClick = /*onClickDay*/ ctx[6];
-			if (dirty & /*onContextMenuDay*/ 16) day_changes.onContextMenu = /*onContextMenuDay*/ ctx[4];
-			if (dirty & /*onHoverDay*/ 4) day_changes.onHover = /*onHoverDay*/ ctx[2];
-			if (dirty & /*sources, month, today*/ 17664) day_changes.metadata = getDailyMetadata(/*sources*/ ctx[8], /*day*/ ctx[21], /*today*/ ctx[10]);
-			if (dirty & /*selectedId*/ 512) day_changes.selectedId = /*selectedId*/ ctx[9];
+			if (dirty[0] & /*month*/ 65536) day_changes.date = /*date*/ ctx[28];
+			if (dirty[0] & /*localizedToday*/ 16384) day_changes.today = /*localizedToday*/ ctx[14];
+			if (dirty[0] & /*localizedDisplayedMonth*/ 32768) day_changes.displayedMonth = /*localizedDisplayedMonth*/ ctx[15];
+			if (dirty[0] & /*onClickDay*/ 32) day_changes.onClick = /*onClickDay*/ ctx[5];
+			if (dirty[0] & /*onContextMenuDay*/ 8) day_changes.onContextMenu = /*onContextMenuDay*/ ctx[3];
+			if (dirty[0] & /*onHoverDay*/ 2) day_changes.onHover = /*onHoverDay*/ ctx[1];
+			if (dirty[0] & /*sources, month*/ 65664) day_changes.metadata = getDailyMetadata(/*sources*/ ctx[7], /*date*/ ctx[28]);
+			if (dirty[0] & /*selectedId*/ 256) day_changes.selectedId = /*selectedId*/ ctx[8];
 			day.$set(day_changes);
 		},
 		i(local) {
@@ -4011,7 +4279,7 @@ function create_each_block_1(key_1, ctx) {
 	};
 }
 
-// (73:6) {#each month as week (week.weekNum)}
+// (82:6) {#each month as week (week.days[0].format())}
 function create_each_block(key_1, ctx) {
 	let tr;
 	let t0;
@@ -4019,9 +4287,9 @@ function create_each_block(key_1, ctx) {
 	let each_1_lookup = new Map();
 	let t1;
 	let current;
-	let if_block = /*showWeekNums*/ ctx[1] && create_if_block(ctx);
-	let each_value_1 = /*week*/ ctx[18].days;
-	const get_key = ctx => /*day*/ ctx[21].format();
+	let if_block = /*showWeekNums*/ ctx[0] && create_if_block(ctx);
+	let each_value_1 = /*week*/ ctx[25].days;
+	const get_key = ctx => /*date*/ ctx[28].format();
 
 	for (let i = 0; i < each_value_1.length; i += 1) {
 		let child_ctx = get_each_context_1(ctx, each_value_1, i);
@@ -4050,7 +4318,9 @@ function create_each_block(key_1, ctx) {
 			append(tr, t0);
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
-				each_blocks[i].m(tr, null);
+				if (each_blocks[i]) {
+					each_blocks[i].m(tr, null);
+				}
 			}
 
 			append(tr, t1);
@@ -4059,11 +4329,11 @@ function create_each_block(key_1, ctx) {
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
 
-			if (/*showWeekNums*/ ctx[1]) {
+			if (/*showWeekNums*/ ctx[0]) {
 				if (if_block) {
 					if_block.p(ctx, dirty);
 
-					if (dirty & /*showWeekNums*/ 2) {
+					if (dirty[0] & /*showWeekNums*/ 1) {
 						transition_in(if_block, 1);
 					}
 				} else {
@@ -4082,8 +4352,8 @@ function create_each_block(key_1, ctx) {
 				check_outros();
 			}
 
-			if (dirty & /*month, today, displayedMonth, onClickDay, onContextMenuDay, onHoverDay, getDailyMetadata, sources, selectedId*/ 18261) {
-				each_value_1 = /*week*/ ctx[18].days;
+			if (dirty[0] & /*month, localizedToday, localizedDisplayedMonth, onClickDay, onContextMenuDay, onHoverDay, sources, selectedId*/ 115114) {
+				each_value_1 = /*week*/ ctx[25].days;
 				group_outros();
 				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, tr, outro_and_destroy_block, create_each_block_1, t1, get_each_context_1);
 				check_outros();
@@ -4119,7 +4389,7 @@ function create_each_block(key_1, ctx) {
 	};
 }
 
-function create_fragment$7(ctx) {
+function create_fragment$1(ctx) {
 	let div;
 	let nav;
 	let t0;
@@ -4138,32 +4408,33 @@ function create_fragment$7(ctx) {
 
 	nav = new Nav({
 			props: {
-				today: /*today*/ ctx[10],
-				displayedMonth: /*displayedMonth*/ ctx[0],
-				incrementDisplayedMonth: /*incrementDisplayedMonth*/ ctx[11],
-				decrementDisplayedMonth: /*decrementDisplayedMonth*/ ctx[12],
-				resetDisplayedMonth: /*resetDisplayedMonth*/ ctx[13]
+				today: /*localizedToday*/ ctx[14],
+				displayedMonth: /*localizedDisplayedMonth*/ ctx[15],
+				locale: /*locale*/ ctx[12],
+				incrementDisplayedMonth: /*incrementDisplayedMonth*/ ctx[9],
+				decrementDisplayedMonth: /*decrementDisplayedMonth*/ ctx[10],
+				resetDisplayedMonth: /*resetDisplayedMonth*/ ctx[11]
 			}
 		});
 
-	let if_block0 = /*showWeekNums*/ ctx[1] && create_if_block_2();
-	let each_value_3 = /*month*/ ctx[14][1].days;
+	let if_block0 = /*showWeekNums*/ ctx[0] && create_if_block_2();
+	let each_value_3 = /*month*/ ctx[16][0].days;
 	let each_blocks_2 = [];
 
 	for (let i = 0; i < each_value_3.length; i += 1) {
 		each_blocks_2[i] = create_each_block_3(get_each_context_3(ctx, each_value_3, i));
 	}
 
-	let if_block1 = /*showWeekNums*/ ctx[1] && create_if_block_1();
-	let each_value_2 = /*daysOfWeek*/ ctx[15];
+	let if_block1 = /*showWeekNums*/ ctx[0] && create_if_block_1();
+	let each_value_2 = /*daysOfWeek*/ ctx[17];
 	let each_blocks_1 = [];
 
 	for (let i = 0; i < each_value_2.length; i += 1) {
 		each_blocks_1[i] = create_each_block_2(get_each_context_2(ctx, each_value_2, i));
 	}
 
-	let each_value = /*month*/ ctx[14];
-	const get_key = ctx => /*week*/ ctx[18].weekNum;
+	let each_value = /*month*/ ctx[16];
+	const get_key = ctx => /*week*/ ctx[25].days[0].format();
 
 	for (let i = 0; i < each_value.length; i += 1) {
 		let child_ctx = get_each_context(ctx, each_value, i);
@@ -4205,7 +4476,7 @@ function create_fragment$7(ctx) {
 			attr(table, "class", "calendar svelte-pcimu8");
 			attr(div, "id", "calendar-container");
 			attr(div, "class", "container svelte-pcimu8");
-			toggle_class(div, "is-mobile", /*isMobile*/ ctx[16]);
+			toggle_class(div, "is-mobile", /*isMobile*/ ctx[18]);
 		},
 		m(target, anchor) {
 			insert(target, div, anchor);
@@ -4217,7 +4488,9 @@ function create_fragment$7(ctx) {
 			append(colgroup, t1);
 
 			for (let i = 0; i < each_blocks_2.length; i += 1) {
-				each_blocks_2[i].m(colgroup, null);
+				if (each_blocks_2[i]) {
+					each_blocks_2[i].m(colgroup, null);
+				}
 			}
 
 			append(table, t2);
@@ -4227,25 +4500,30 @@ function create_fragment$7(ctx) {
 			append(tr, t3);
 
 			for (let i = 0; i < each_blocks_1.length; i += 1) {
-				each_blocks_1[i].m(tr, null);
+				if (each_blocks_1[i]) {
+					each_blocks_1[i].m(tr, null);
+				}
 			}
 
 			append(table, t4);
 			append(table, tbody);
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
-				each_blocks[i].m(tbody, null);
+				if (each_blocks[i]) {
+					each_blocks[i].m(tbody, null);
+				}
 			}
 
 			current = true;
 		},
-		p(ctx, [dirty]) {
+		p(ctx, dirty) {
 			const nav_changes = {};
-			if (dirty & /*today*/ 1024) nav_changes.today = /*today*/ ctx[10];
-			if (dirty & /*displayedMonth*/ 1) nav_changes.displayedMonth = /*displayedMonth*/ ctx[0];
+			if (dirty[0] & /*localizedToday*/ 16384) nav_changes.today = /*localizedToday*/ ctx[14];
+			if (dirty[0] & /*localizedDisplayedMonth*/ 32768) nav_changes.displayedMonth = /*localizedDisplayedMonth*/ ctx[15];
+			if (dirty[0] & /*locale*/ 4096) nav_changes.locale = /*locale*/ ctx[12];
 			nav.$set(nav_changes);
 
-			if (/*showWeekNums*/ ctx[1]) {
+			if (/*showWeekNums*/ ctx[0]) {
 				if (if_block0) ; else {
 					if_block0 = create_if_block_2();
 					if_block0.c();
@@ -4256,8 +4534,8 @@ function create_fragment$7(ctx) {
 				if_block0 = null;
 			}
 
-			if (dirty & /*isWeekend, month*/ 16384) {
-				each_value_3 = /*month*/ ctx[14][1].days;
+			if (dirty[0] & /*month*/ 65536) {
+				each_value_3 = /*month*/ ctx[16][0].days;
 				let i;
 
 				for (i = 0; i < each_value_3.length; i += 1) {
@@ -4279,7 +4557,7 @@ function create_fragment$7(ctx) {
 				each_blocks_2.length = each_value_3.length;
 			}
 
-			if (/*showWeekNums*/ ctx[1]) {
+			if (/*showWeekNums*/ ctx[0]) {
 				if (if_block1) ; else {
 					if_block1 = create_if_block_1();
 					if_block1.c();
@@ -4290,8 +4568,8 @@ function create_fragment$7(ctx) {
 				if_block1 = null;
 			}
 
-			if (dirty & /*daysOfWeek*/ 32768) {
-				each_value_2 = /*daysOfWeek*/ ctx[15];
+			if (dirty[0] & /*daysOfWeek*/ 131072) {
+				each_value_2 = /*daysOfWeek*/ ctx[17];
 				let i;
 
 				for (i = 0; i < each_value_2.length; i += 1) {
@@ -4313,8 +4591,8 @@ function create_fragment$7(ctx) {
 				each_blocks_1.length = each_value_2.length;
 			}
 
-			if (dirty & /*month, today, displayedMonth, onClickDay, onContextMenuDay, onHoverDay, getDailyMetadata, sources, selectedId, getWeeklyMetadata, onClickWeek, onContextMenuWeek, onHoverWeek, showWeekNums*/ 18431) {
-				each_value = /*month*/ ctx[14];
+			if (dirty[0] & /*month, localizedToday, localizedDisplayedMonth, onClickDay, onContextMenuDay, onHoverDay, sources, selectedId, weekStartIndex, onClickWeek, onContextMenuWeek, onHoverWeek, showWeekNums*/ 123391) {
+				each_value = /*month*/ ctx[16];
 				group_outros();
 				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value, each2_lookup, tbody, outro_and_destroy_block, create_each_block, null, get_each_context);
 				check_outros();
@@ -4354,10 +4632,10 @@ function create_fragment$7(ctx) {
 	};
 }
 
-function instance$7($$self, $$props, $$invalidate) {
-	
-	
-	let { localeData } = $$props;
+function instance$1($$self, $$props, $$invalidate) {
+	let { localeOverride = "system-default" } = $$props;
+	let { weekStart = "locale" } = $$props;
+	let { weekdayLabelFormat = "ddd" } = $$props;
 	let { showWeekNums = false } = $$props;
 	let { onHoverDay } = $$props;
 	let { onHoverWeek } = $$props;
@@ -4369,51 +4647,75 @@ function instance$7($$self, $$props, $$invalidate) {
 	let { selectedId } = $$props;
 	let { today = window.moment() } = $$props;
 	let { displayedMonth = today } = $$props;
+	let locale;
+	let weekStartIndex;
+	let localeFirstDayOfYear;
+	let localizedToday;
+	let localizedDisplayedMonth;
 	let month;
 	let daysOfWeek;
-
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let isMobile = window.app.isMobile;
+	let isMobile = Boolean(window.app.isMobile);
 
 	function incrementDisplayedMonth() {
-		$$invalidate(0, displayedMonth = displayedMonth.clone().add(1, "month"));
+		$$invalidate(19, displayedMonth = localizedDisplayedMonth.clone().add(1, "month"));
 	}
 
 	function decrementDisplayedMonth() {
-		$$invalidate(0, displayedMonth = displayedMonth.clone().subtract(1, "month"));
+		$$invalidate(19, displayedMonth = localizedDisplayedMonth.clone().subtract(1, "month"));
 	}
 
 	function resetDisplayedMonth() {
-		$$invalidate(0, displayedMonth = today.clone());
+		$$invalidate(19, displayedMonth = localizedToday.clone());
 	}
 
 	$$self.$$set = $$props => {
-		if ("localeData" in $$props) $$invalidate(17, localeData = $$props.localeData);
-		if ("showWeekNums" in $$props) $$invalidate(1, showWeekNums = $$props.showWeekNums);
-		if ("onHoverDay" in $$props) $$invalidate(2, onHoverDay = $$props.onHoverDay);
-		if ("onHoverWeek" in $$props) $$invalidate(3, onHoverWeek = $$props.onHoverWeek);
-		if ("onContextMenuDay" in $$props) $$invalidate(4, onContextMenuDay = $$props.onContextMenuDay);
-		if ("onContextMenuWeek" in $$props) $$invalidate(5, onContextMenuWeek = $$props.onContextMenuWeek);
-		if ("onClickDay" in $$props) $$invalidate(6, onClickDay = $$props.onClickDay);
-		if ("onClickWeek" in $$props) $$invalidate(7, onClickWeek = $$props.onClickWeek);
-		if ("sources" in $$props) $$invalidate(8, sources = $$props.sources);
-		if ("selectedId" in $$props) $$invalidate(9, selectedId = $$props.selectedId);
-		if ("today" in $$props) $$invalidate(10, today = $$props.today);
-		if ("displayedMonth" in $$props) $$invalidate(0, displayedMonth = $$props.displayedMonth);
+		if ('localeOverride' in $$props) $$invalidate(20, localeOverride = $$props.localeOverride);
+		if ('weekStart' in $$props) $$invalidate(21, weekStart = $$props.weekStart);
+		if ('weekdayLabelFormat' in $$props) $$invalidate(22, weekdayLabelFormat = $$props.weekdayLabelFormat);
+		if ('showWeekNums' in $$props) $$invalidate(0, showWeekNums = $$props.showWeekNums);
+		if ('onHoverDay' in $$props) $$invalidate(1, onHoverDay = $$props.onHoverDay);
+		if ('onHoverWeek' in $$props) $$invalidate(2, onHoverWeek = $$props.onHoverWeek);
+		if ('onContextMenuDay' in $$props) $$invalidate(3, onContextMenuDay = $$props.onContextMenuDay);
+		if ('onContextMenuWeek' in $$props) $$invalidate(4, onContextMenuWeek = $$props.onContextMenuWeek);
+		if ('onClickDay' in $$props) $$invalidate(5, onClickDay = $$props.onClickDay);
+		if ('onClickWeek' in $$props) $$invalidate(6, onClickWeek = $$props.onClickWeek);
+		if ('sources' in $$props) $$invalidate(7, sources = $$props.sources);
+		if ('selectedId' in $$props) $$invalidate(8, selectedId = $$props.selectedId);
+		if ('today' in $$props) $$invalidate(23, today = $$props.today);
+		if ('displayedMonth' in $$props) $$invalidate(19, displayedMonth = $$props.displayedMonth);
 	};
 
 	$$self.$$.update = () => {
-		if ($$self.$$.dirty & /*displayedMonth, localeData*/ 131073) {
-			$$invalidate(14, month = getMonth(displayedMonth, localeData));
+		if ($$self.$$.dirty[0] & /*localeOverride*/ 1048576) {
+			$$invalidate(12, locale = resolveCalendarLocale(localeOverride));
 		}
 
-		if ($$self.$$.dirty & /*today, localeData*/ 132096) {
-			$$invalidate(15, daysOfWeek = getDaysOfWeek(today, localeData));
+		if ($$self.$$.dirty[0] & /*locale, weekStart*/ 2101248) {
+			$$invalidate(13, weekStartIndex = getCalendarWeekStartIndex(locale, weekStart));
+		}
+
+		if ($$self.$$.dirty[0] & /*locale*/ 4096) {
+			$$invalidate(24, localeFirstDayOfYear = window.moment.localeData(locale).firstDayOfYear());
+		}
+
+		if ($$self.$$.dirty[0] & /*today, locale*/ 8392704) {
+			$$invalidate(14, localizedToday = withCalendarLocale(today, locale));
+		}
+
+		if ($$self.$$.dirty[0] & /*displayedMonth, locale*/ 528384) {
+			$$invalidate(15, localizedDisplayedMonth = withCalendarLocale(displayedMonth, locale));
+		}
+
+		if ($$self.$$.dirty[0] & /*localizedDisplayedMonth, locale, weekStartIndex, localeFirstDayOfYear*/ 16822272) {
+			$$invalidate(16, month = getCalendarMonth(localizedDisplayedMonth, locale, weekStartIndex, localeFirstDayOfYear));
+		}
+
+		if ($$self.$$.dirty[0] & /*localizedToday, locale, weekStartIndex, weekdayLabelFormat*/ 4222976) {
+			$$invalidate(17, daysOfWeek = getCalendarWeekdayLabels(localizedToday, locale, weekStartIndex, weekdayLabelFormat));
 		}
 	};
 
 	return [
-		displayedMonth,
 		showWeekNums,
 		onHoverDay,
 		onHoverWeek,
@@ -4423,132 +4725,71 @@ function instance$7($$self, $$props, $$invalidate) {
 		onClickWeek,
 		sources,
 		selectedId,
-		today,
 		incrementDisplayedMonth,
 		decrementDisplayedMonth,
 		resetDisplayedMonth,
+		locale,
+		weekStartIndex,
+		localizedToday,
+		localizedDisplayedMonth,
 		month,
 		daysOfWeek,
 		isMobile,
-		localeData
+		displayedMonth,
+		localeOverride,
+		weekStart,
+		weekdayLabelFormat,
+		today,
+		localeFirstDayOfYear
 	];
 }
 
 let Calendar$1 = class Calendar extends SvelteComponent {
 	constructor(options) {
 		super();
-		if (!document.getElementById("svelte-pcimu8-style")) add_css$6();
 
-		init(this, options, instance$7, create_fragment$7, not_equal, {
-			localeData: 17,
-			showWeekNums: 1,
-			onHoverDay: 2,
-			onHoverWeek: 3,
-			onContextMenuDay: 4,
-			onContextMenuWeek: 5,
-			onClickDay: 6,
-			onClickWeek: 7,
-			sources: 8,
-			selectedId: 9,
-			today: 10,
-			displayedMonth: 0,
-			incrementDisplayedMonth: 11,
-			decrementDisplayedMonth: 12,
-			resetDisplayedMonth: 13
-		});
+		init(
+			this,
+			options,
+			instance$1,
+			create_fragment$1,
+			not_equal,
+			{
+				localeOverride: 20,
+				weekStart: 21,
+				weekdayLabelFormat: 22,
+				showWeekNums: 0,
+				onHoverDay: 1,
+				onHoverWeek: 2,
+				onContextMenuDay: 3,
+				onContextMenuWeek: 4,
+				onClickDay: 5,
+				onClickWeek: 6,
+				sources: 7,
+				selectedId: 8,
+				today: 23,
+				displayedMonth: 19,
+				incrementDisplayedMonth: 9,
+				decrementDisplayedMonth: 10,
+				resetDisplayedMonth: 11
+			},
+			add_css$1,
+			[-1, -1]
+		);
 	}
 
 	get incrementDisplayedMonth() {
-		return this.$$.ctx[11];
+		return this.$$.ctx[9];
 	}
 
 	get decrementDisplayedMonth() {
-		return this.$$.ctx[12];
+		return this.$$.ctx[10];
 	}
 
 	get resetDisplayedMonth() {
-		return this.$$.ctx[13];
+		return this.$$.ctx[11];
 	}
 };
-
-const langToMomentLocale = {
-    en: "en-gb",
-    zh: "zh-cn",
-    "zh-TW": "zh-tw",
-    ru: "ru",
-    ko: "ko",
-    it: "it",
-    id: "id",
-    ro: "ro",
-    "pt-BR": "pt-br",
-    cz: "cs",
-    da: "da",
-    de: "de",
-    es: "es",
-    fr: "fr",
-    no: "nn",
-    pl: "pl",
-    pt: "pt",
-    tr: "tr",
-    hi: "hi",
-    nl: "nl",
-    ar: "ar",
-    ja: "ja",
-};
-const weekdays = [
-    "sunday",
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-];
-function overrideGlobalMomentWeekStart(weekStart) {
-    const { moment } = window;
-    const currentLocale = moment.locale();
-    // Save the initial locale weekspec so that we can restore
-    // it when toggling between the different options in settings.
-    if (!window._bundledLocaleWeekSpec) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        window._bundledLocaleWeekSpec = moment.localeData()._week;
-    }
-    if (weekStart === "locale") {
-        moment.updateLocale(currentLocale, {
-            week: window._bundledLocaleWeekSpec,
-        });
-    }
-    else {
-        moment.updateLocale(currentLocale, {
-            week: {
-                dow: weekdays.indexOf(weekStart) || 0,
-            },
-        });
-    }
-}
-/**
- * Sets the locale used by the calendar. This allows the calendar to
- * default to the user's locale (e.g. Start Week on Sunday/Monday/Friday)
- *
- * @param localeOverride locale string (e.g. "en-US")
- */
-function configureGlobalMomentLocale(localeOverride = "system-default", weekStart = "locale") {
-    var _a;
-    const obsidianLang = localStorage.getItem("language") || "en";
-    const systemLang = (_a = navigator.language) === null || _a === void 0 ? void 0 : _a.toLowerCase();
-    let momentLocale = langToMomentLocale[obsidianLang];
-    if (localeOverride !== "system-default") {
-        momentLocale = localeOverride;
-    }
-    else if (systemLang.startsWith(obsidianLang)) {
-        // If the system locale is more specific (en-gb vs en), use the system locale.
-        momentLocale = systemLang;
-    }
-    const currentLocale = window.moment.locale(momentLocale);
-    console.debug(`[Calendar] Trying to switch Moment.js global locale to ${momentLocale}, got ${currentLocale}`);
-    overrideGlobalMomentWeekStart(weekStart);
-    return currentLocale;
-}
 
 /* src/ui/Calendar.svelte generated by Svelte v3.59.2 */
 
@@ -4556,85 +4797,89 @@ function add_css(target) {
 	append_styles(target, "svelte-4o0xgm", ".existing-note-navigation.svelte-4o0xgm.svelte-4o0xgm{display:flex;gap:0.5em;justify-content:center;margin-top:0.5em}.existing-note-navigation.svelte-4o0xgm button.svelte-4o0xgm{color:var(--text-muted);font-size:0.7em;text-transform:uppercase}.erin-calendar-header-action{cursor:pointer;text-decoration:underline dotted;text-underline-offset:0.15em}.erin-calendar-header-action:focus-visible{border-radius:2px;outline:2px solid var(--interactive-accent);outline-offset:2px}.erin-calendar-quarter{color:var(--text-muted);font-size:0.7em;margin:0 0.35em}");
 }
 
-// (131:2) {#key calendarKey}
+// (138:2) {#key calendarKey}
 function create_key_block(ctx) {
-	let calendarbase;
+	let isolatedcalendar;
 	let updating_displayedMonth;
 	let current;
 
-	function calendarbase_displayedMonth_binding(value) {
-		/*calendarbase_displayedMonth_binding*/ ctx[26](value);
+	function isolatedcalendar_displayedMonth_binding(value) {
+		/*isolatedcalendar_displayedMonth_binding*/ ctx[33](value);
 	}
 
-	let calendarbase_props = {
+	let isolatedcalendar_props = {
 		sources: /*sources*/ ctx[1],
-		today: /*today*/ ctx[10],
-		onHoverDay: /*onHoverDay*/ ctx[2],
-		onHoverWeek: /*onHoverWeek*/ ctx[3],
-		onContextMenuDay: /*onContextMenuDay*/ ctx[6],
-		onContextMenuWeek: /*onContextMenuWeek*/ ctx[7],
-		onClickDay: /*onClickDay*/ ctx[4],
-		onClickWeek: /*onClickWeek*/ ctx[5],
-		localeData: /*today*/ ctx[10].localeData(),
-		selectedId: /*$activeFile*/ ctx[15],
-		showWeekNums: /*$settings*/ ctx[9].showWeeklyNote
+		today: /*today*/ ctx[16],
+		onHoverDay: /*onHoverDay*/ ctx[8],
+		onHoverWeek: /*onHoverWeek*/ ctx[9],
+		onContextMenuDay: /*onContextMenuDay*/ ctx[12],
+		onContextMenuWeek: /*onContextMenuWeek*/ ctx[13],
+		onClickDay: /*onClickDay*/ ctx[10],
+		onClickWeek: /*onClickWeek*/ ctx[11],
+		localeOverride: /*$settingsStore*/ ctx[15].localeOverride,
+		weekStart: /*$settingsStore*/ ctx[15].weekStart,
+		weekdayLabelFormat: /*$settingsStore*/ ctx[15].weekdayLabelFormat,
+		selectedId: /*$activeFileStore*/ ctx[21],
+		showWeekNums: /*$settingsStore*/ ctx[15].showWeeklyNote
 	};
 
 	if (/*displayedMonth*/ ctx[0] !== void 0) {
-		calendarbase_props.displayedMonth = /*displayedMonth*/ ctx[0];
+		isolatedcalendar_props.displayedMonth = /*displayedMonth*/ ctx[0];
 	}
 
-	calendarbase = new Calendar$1({ props: calendarbase_props });
-	binding_callbacks$1.push(() => bind(calendarbase, 'displayedMonth', calendarbase_displayedMonth_binding));
+	isolatedcalendar = new Calendar$1({ props: isolatedcalendar_props });
+	binding_callbacks.push(() => bind(isolatedcalendar, 'displayedMonth', isolatedcalendar_displayedMonth_binding));
 
 	return {
 		c() {
-			create_component$1(calendarbase.$$.fragment);
+			create_component(isolatedcalendar.$$.fragment);
 		},
 		m(target, anchor) {
-			mount_component$1(calendarbase, target, anchor);
+			mount_component(isolatedcalendar, target, anchor);
 			current = true;
 		},
 		p(ctx, dirty) {
-			const calendarbase_changes = {};
-			if (dirty[0] & /*sources*/ 2) calendarbase_changes.sources = /*sources*/ ctx[1];
-			if (dirty[0] & /*today*/ 1024) calendarbase_changes.today = /*today*/ ctx[10];
-			if (dirty[0] & /*onHoverDay*/ 4) calendarbase_changes.onHoverDay = /*onHoverDay*/ ctx[2];
-			if (dirty[0] & /*onHoverWeek*/ 8) calendarbase_changes.onHoverWeek = /*onHoverWeek*/ ctx[3];
-			if (dirty[0] & /*onContextMenuDay*/ 64) calendarbase_changes.onContextMenuDay = /*onContextMenuDay*/ ctx[6];
-			if (dirty[0] & /*onContextMenuWeek*/ 128) calendarbase_changes.onContextMenuWeek = /*onContextMenuWeek*/ ctx[7];
-			if (dirty[0] & /*onClickDay*/ 16) calendarbase_changes.onClickDay = /*onClickDay*/ ctx[4];
-			if (dirty[0] & /*onClickWeek*/ 32) calendarbase_changes.onClickWeek = /*onClickWeek*/ ctx[5];
-			if (dirty[0] & /*today*/ 1024) calendarbase_changes.localeData = /*today*/ ctx[10].localeData();
-			if (dirty[0] & /*$activeFile*/ 32768) calendarbase_changes.selectedId = /*$activeFile*/ ctx[15];
-			if (dirty[0] & /*$settings*/ 512) calendarbase_changes.showWeekNums = /*$settings*/ ctx[9].showWeeklyNote;
+			const isolatedcalendar_changes = {};
+			if (dirty[0] & /*sources*/ 2) isolatedcalendar_changes.sources = /*sources*/ ctx[1];
+			if (dirty[0] & /*today*/ 65536) isolatedcalendar_changes.today = /*today*/ ctx[16];
+			if (dirty[0] & /*onHoverDay*/ 256) isolatedcalendar_changes.onHoverDay = /*onHoverDay*/ ctx[8];
+			if (dirty[0] & /*onHoverWeek*/ 512) isolatedcalendar_changes.onHoverWeek = /*onHoverWeek*/ ctx[9];
+			if (dirty[0] & /*onContextMenuDay*/ 4096) isolatedcalendar_changes.onContextMenuDay = /*onContextMenuDay*/ ctx[12];
+			if (dirty[0] & /*onContextMenuWeek*/ 8192) isolatedcalendar_changes.onContextMenuWeek = /*onContextMenuWeek*/ ctx[13];
+			if (dirty[0] & /*onClickDay*/ 1024) isolatedcalendar_changes.onClickDay = /*onClickDay*/ ctx[10];
+			if (dirty[0] & /*onClickWeek*/ 2048) isolatedcalendar_changes.onClickWeek = /*onClickWeek*/ ctx[11];
+			if (dirty[0] & /*$settingsStore*/ 32768) isolatedcalendar_changes.localeOverride = /*$settingsStore*/ ctx[15].localeOverride;
+			if (dirty[0] & /*$settingsStore*/ 32768) isolatedcalendar_changes.weekStart = /*$settingsStore*/ ctx[15].weekStart;
+			if (dirty[0] & /*$settingsStore*/ 32768) isolatedcalendar_changes.weekdayLabelFormat = /*$settingsStore*/ ctx[15].weekdayLabelFormat;
+			if (dirty[0] & /*$activeFileStore*/ 2097152) isolatedcalendar_changes.selectedId = /*$activeFileStore*/ ctx[21];
+			if (dirty[0] & /*$settingsStore*/ 32768) isolatedcalendar_changes.showWeekNums = /*$settingsStore*/ ctx[15].showWeeklyNote;
 
 			if (!updating_displayedMonth && dirty[0] & /*displayedMonth*/ 1) {
 				updating_displayedMonth = true;
-				calendarbase_changes.displayedMonth = /*displayedMonth*/ ctx[0];
+				isolatedcalendar_changes.displayedMonth = /*displayedMonth*/ ctx[0];
 				add_flush_callback(() => updating_displayedMonth = false);
 			}
 
-			calendarbase.$set(calendarbase_changes);
+			isolatedcalendar.$set(isolatedcalendar_changes);
 		},
 		i(local) {
 			if (current) return;
-			transition_in$1(calendarbase.$$.fragment, local);
+			transition_in(isolatedcalendar.$$.fragment, local);
 			current = true;
 		},
 		o(local) {
-			transition_out$1(calendarbase.$$.fragment, local);
+			transition_out(isolatedcalendar.$$.fragment, local);
 			current = false;
 		},
 		d(detaching) {
-			destroy_component$1(calendarbase, detaching);
+			destroy_component(isolatedcalendar, detaching);
 		}
 	};
 }
 
 function create_fragment(ctx) {
 	let div1;
-	let previous_key = /*calendarKey*/ ctx[14];
+	let previous_key = /*calendarKey*/ ctx[20];
 	let t0;
 	let div0;
 	let button0;
@@ -4651,45 +4896,45 @@ function create_fragment(ctx) {
 
 	return {
 		c() {
-			div1 = element$1("div");
+			div1 = element("div");
 			key_block.c();
-			t0 = space$1();
-			div0 = element$1("div");
-			button0 = element$1("button");
-			t1 = text$1("Prev");
-			t2 = space$1();
-			button1 = element$1("button");
-			t3 = text$1("Next");
-			attr$1(button0, "aria-label", "Open previous existing daily note");
-			button0.disabled = button0_disabled_value = !/*previousDailyNote*/ ctx[12];
-			attr$1(button0, "type", "button");
-			attr$1(button0, "class", "svelte-4o0xgm");
-			attr$1(button1, "aria-label", "Open next existing daily note");
-			button1.disabled = button1_disabled_value = !/*nextDailyNote*/ ctx[13];
-			attr$1(button1, "type", "button");
-			attr$1(button1, "class", "svelte-4o0xgm");
-			attr$1(div0, "class", "existing-note-navigation svelte-4o0xgm");
-			attr$1(div0, "aria-label", "Daily note navigation");
+			t0 = space();
+			div0 = element("div");
+			button0 = element("button");
+			t1 = text("Prev");
+			t2 = space();
+			button1 = element("button");
+			t3 = text("Next");
+			attr(button0, "aria-label", "Open previous existing daily note");
+			button0.disabled = button0_disabled_value = !/*previousDailyNote*/ ctx[18];
+			attr(button0, "type", "button");
+			attr(button0, "class", "svelte-4o0xgm");
+			attr(button1, "aria-label", "Open next existing daily note");
+			button1.disabled = button1_disabled_value = !/*nextDailyNote*/ ctx[19];
+			attr(button1, "type", "button");
+			attr(button1, "class", "svelte-4o0xgm");
+			attr(div0, "class", "existing-note-navigation svelte-4o0xgm");
+			attr(div0, "aria-label", "Daily note navigation");
 		},
 		m(target, anchor) {
-			insert$1(target, div1, anchor);
+			insert(target, div1, anchor);
 			key_block.m(div1, null);
-			append$1(div1, t0);
-			append$1(div1, div0);
-			append$1(div0, button0);
-			append$1(button0, t1);
-			append$1(div0, t2);
-			append$1(div0, button1);
-			append$1(button1, t3);
-			/*div1_binding*/ ctx[29](div1);
+			append(div1, t0);
+			append(div1, div0);
+			append(div0, button0);
+			append(button0, t1);
+			append(div0, t2);
+			append(div0, button1);
+			append(button1, t3);
+			/*div1_binding*/ ctx[36](div1);
 			current = true;
 
 			if (!mounted) {
 				dispose = [
-					listen$1(button0, "click", /*click_handler*/ ctx[27]),
-					listen$1(button1, "click", /*click_handler_1*/ ctx[28]),
-					listen$1(div1, "pointerleave", function () {
-						if (is_function$1(/*onPointerLeave*/ ctx[8])) /*onPointerLeave*/ ctx[8].apply(this, arguments);
+					listen(button0, "click", /*click_handler*/ ctx[34]),
+					listen(button1, "click", /*click_handler_1*/ ctx[35]),
+					listen(div1, "pointerleave", function () {
+						if (is_function(/*onPointerLeave*/ ctx[14])) /*onPointerLeave*/ ctx[14].apply(this, arguments);
 					})
 				];
 
@@ -4699,41 +4944,41 @@ function create_fragment(ctx) {
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
 
-			if (dirty[0] & /*calendarKey*/ 16384 && not_equal$1(previous_key, previous_key = /*calendarKey*/ ctx[14])) {
-				group_outros$1();
-				transition_out$1(key_block, 1, 1, noop$1);
-				check_outros$1();
+			if (dirty[0] & /*calendarKey*/ 1048576 && not_equal(previous_key, previous_key = /*calendarKey*/ ctx[20])) {
+				group_outros();
+				transition_out(key_block, 1, 1, noop);
+				check_outros();
 				key_block = create_key_block(ctx);
 				key_block.c();
-				transition_in$1(key_block, 1);
+				transition_in(key_block, 1);
 				key_block.m(div1, t0);
 			} else {
 				key_block.p(ctx, dirty);
 			}
 
-			if (!current || dirty[0] & /*previousDailyNote*/ 4096 && button0_disabled_value !== (button0_disabled_value = !/*previousDailyNote*/ ctx[12])) {
+			if (!current || dirty[0] & /*previousDailyNote*/ 262144 && button0_disabled_value !== (button0_disabled_value = !/*previousDailyNote*/ ctx[18])) {
 				button0.disabled = button0_disabled_value;
 			}
 
-			if (!current || dirty[0] & /*nextDailyNote*/ 8192 && button1_disabled_value !== (button1_disabled_value = !/*nextDailyNote*/ ctx[13])) {
+			if (!current || dirty[0] & /*nextDailyNote*/ 524288 && button1_disabled_value !== (button1_disabled_value = !/*nextDailyNote*/ ctx[19])) {
 				button1.disabled = button1_disabled_value;
 			}
 		},
 		i(local) {
 			if (current) return;
-			transition_in$1(key_block);
+			transition_in(key_block);
 			current = true;
 		},
 		o(local) {
-			transition_out$1(key_block);
+			transition_out(key_block);
 			current = false;
 		},
 		d(detaching) {
-			if (detaching) detach$1(div1);
+			if (detaching) detach(div1);
 			key_block.d(detaching);
-			/*div1_binding*/ ctx[29](null);
+			/*div1_binding*/ ctx[36](null);
 			mounted = false;
-			run_all$1(dispose);
+			run_all(dispose);
 		}
 	};
 }
@@ -4780,20 +5025,52 @@ function setHeaderAction(element, enabled, label, onClick) {
 }
 
 function instance($$self, $$props, $$invalidate) {
-	let $settings;
-	let $dateTags;
-	let $dailyNotes;
-	let $activeDailyDate;
-	let $activeFile;
-	component_subscribe($$self, settings, $$value => $$invalidate(9, $settings = $$value));
-	component_subscribe($$self, dateTags, $$value => $$invalidate(23, $dateTags = $$value));
-	component_subscribe($$self, dailyNotes, $$value => $$invalidate(24, $dailyNotes = $$value));
-	component_subscribe($$self, activeDailyDate, $$value => $$invalidate(25, $activeDailyDate = $$value));
-	component_subscribe($$self, activeFile, $$value => $$invalidate(15, $activeFile = $$value));
-	let today;
+	let $settingsStore,
+		$$unsubscribe_settingsStore = noop,
+		$$subscribe_settingsStore = () => ($$unsubscribe_settingsStore(), $$unsubscribe_settingsStore = subscribe(settingsStore, $$value => $$invalidate(15, $settingsStore = $$value)), settingsStore);
+
+	let $weeklyNotesStore,
+		$$unsubscribe_weeklyNotesStore = noop,
+		$$subscribe_weeklyNotesStore = () => ($$unsubscribe_weeklyNotesStore(), $$unsubscribe_weeklyNotesStore = subscribe(weeklyNotesStore, $$value => $$invalidate(29, $weeklyNotesStore = $$value)), weeklyNotesStore);
+
+	let $dailyNotesStore,
+		$$unsubscribe_dailyNotesStore = noop,
+		$$subscribe_dailyNotesStore = () => ($$unsubscribe_dailyNotesStore(), $$unsubscribe_dailyNotesStore = subscribe(dailyNotesStore, $$value => $$invalidate(30, $dailyNotesStore = $$value)), dailyNotesStore);
+
+	let $dateTagsStore,
+		$$unsubscribe_dateTagsStore = noop,
+		$$subscribe_dateTagsStore = () => ($$unsubscribe_dateTagsStore(), $$unsubscribe_dateTagsStore = subscribe(dateTagsStore, $$value => $$invalidate(31, $dateTagsStore = $$value)), dateTagsStore);
+
+	let $activeDailyDateStore,
+		$$unsubscribe_activeDailyDateStore = noop,
+		$$subscribe_activeDailyDateStore = () => ($$unsubscribe_activeDailyDateStore(), $$unsubscribe_activeDailyDateStore = subscribe(activeDailyDateStore, $$value => $$invalidate(32, $activeDailyDateStore = $$value)), activeDailyDateStore);
+
+	let $activeFileStore,
+		$$unsubscribe_activeFileStore = noop,
+		$$subscribe_activeFileStore = () => ($$unsubscribe_activeFileStore(), $$unsubscribe_activeFileStore = subscribe(activeFileStore, $$value => $$invalidate(21, $activeFileStore = $$value)), activeFileStore);
+
+	$$self.$$.on_destroy.push(() => $$unsubscribe_settingsStore());
+	$$self.$$.on_destroy.push(() => $$unsubscribe_weeklyNotesStore());
+	$$self.$$.on_destroy.push(() => $$unsubscribe_dailyNotesStore());
+	$$self.$$.on_destroy.push(() => $$unsubscribe_dateTagsStore());
+	$$self.$$.on_destroy.push(() => $$unsubscribe_activeDailyDateStore());
+	$$self.$$.on_destroy.push(() => $$unsubscribe_activeFileStore());
+	let today = window.moment();
 	let calendarEl;
 	let { displayedMonth = today } = $$props;
 	let { sources } = $$props;
+	let { settingsStore = settings } = $$props;
+	$$subscribe_settingsStore();
+	let { dailyNotesStore = dailyNotes } = $$props;
+	$$subscribe_dailyNotesStore();
+	let { weeklyNotesStore = weeklyNotes } = $$props;
+	$$subscribe_weeklyNotesStore();
+	let { dateTagsStore = dateTags } = $$props;
+	$$subscribe_dateTagsStore();
+	let { activeDailyDateStore = activeDailyDate } = $$props;
+	$$subscribe_activeDailyDateStore();
+	let { activeFileStore = activeFile } = $$props;
+	$$subscribe_activeFileStore();
 	let { onHoverDay } = $$props;
 	let { onHoverWeek } = $$props;
 	let { onClickDay } = $$props;
@@ -4809,16 +5086,26 @@ function instance($$self, $$props, $$invalidate) {
 	let previousDailyNote;
 	let nextDailyNote;
 	let calendarKey;
+	const indexKeys = new WeakMap();
+	let nextIndexKey = 0;
 
-	function tick() {
-		$$invalidate(10, today = window.moment());
+	function getIndexKey(index) {
+		if (!index) {
+			return 0;
+		}
+
+		let key = indexKeys.get(index);
+
+		if (key === undefined) {
+			key = ++nextIndexKey;
+			indexKeys.set(index, key);
+		}
+
+		return key;
 	}
 
-	function getToday(settings) {
-		configureGlobalMomentLocale(settings.localeOverride, settings.weekStart);
-		dailyNotes.reindex();
-		weeklyNotes.reindex();
-		return window.moment();
+	function tick(calendarSettings = $settingsStore) {
+		$$invalidate(16, today = window.moment().locale(resolveCalendarLocale(calendarSettings.localeOverride)));
 	}
 
 	function navigateToDailyNote(note) {
@@ -4844,7 +5131,7 @@ function instance($$self, $$props, $$invalidate) {
 		? void 0
 		: title.querySelector(".erin-calendar-quarter")) || null;
 
-		if ($settings.showQuarterlyNote && title && year) {
+		if ($settingsStore.showQuarterlyNote && title && year) {
 			if (!quarter) {
 				quarter = title.ownerDocument.createElement("span");
 				quarter.className = "erin-calendar-quarter";
@@ -4860,24 +5147,12 @@ function instance($$self, $$props, $$invalidate) {
 			quarter = null;
 		}
 
-		setHeaderAction(month, $settings.showMonthlyNote, "Open monthly note", event => onClickMonth(displayedMonth.clone(), isNewTabEvent(event)));
-		setHeaderAction(quarter, $settings.showQuarterlyNote, "Open quarterly note", event => onClickQuarter(displayedMonth.clone(), isNewTabEvent(event)));
-		setHeaderAction(year, $settings.showYearlyNote, "Open yearly note", event => onClickYear(displayedMonth.clone(), isNewTabEvent(event)));
+		setHeaderAction(month, $settingsStore.showMonthlyNote, "Open monthly note", event => onClickMonth(displayedMonth.clone(), isNewTabEvent(event)));
+		setHeaderAction(quarter, $settingsStore.showQuarterlyNote, "Open quarterly note", event => onClickQuarter(displayedMonth.clone(), isNewTabEvent(event)));
+		setHeaderAction(year, $settingsStore.showYearlyNote, "Open yearly note", event => onClickYear(displayedMonth.clone(), isNewTabEvent(event)));
 	}
 
 	afterUpdate(() => {
-		const format = $settings.weekdayLabelFormat || "ddd";
-		const singleLetter = format === "d";
-
-		calendarEl === null || calendarEl === void 0
-		? void 0
-		: calendarEl.querySelectorAll("thead th").forEach((heading, index) => {
-				if ($settings.showWeeklyNote && index === 0) return;
-				const dayIndex = $settings.showWeeklyNote ? index - 1 : index;
-				const label = today.clone().startOf("week").add(dayIndex, "day").format(singleLetter ? "dd" : format);
-				heading.textContent = singleLetter ? label.charAt(0) : label;
-			});
-
 		updatePeriodicHeaderActions();
 	});
 
@@ -4900,7 +5175,7 @@ function instance($$self, $$props, $$invalidate) {
 		clearInterval(heartbeat);
 	});
 
-	function calendarbase_displayedMonth_binding(value) {
+	function isolatedcalendar_displayedMonth_binding(value) {
 		displayedMonth = value;
 		$$invalidate(0, displayedMonth);
 	}
@@ -4909,57 +5184,69 @@ function instance($$self, $$props, $$invalidate) {
 	const click_handler_1 = () => navigateToDailyNote(nextDailyNote);
 
 	function div1_binding($$value) {
-		binding_callbacks$1[$$value ? 'unshift' : 'push'](() => {
+		binding_callbacks[$$value ? 'unshift' : 'push'](() => {
 			calendarEl = $$value;
-			$$invalidate(11, calendarEl);
+			$$invalidate(17, calendarEl);
 		});
 	}
 
 	$$self.$$set = $$props => {
 		if ('displayedMonth' in $$props) $$invalidate(0, displayedMonth = $$props.displayedMonth);
 		if ('sources' in $$props) $$invalidate(1, sources = $$props.sources);
-		if ('onHoverDay' in $$props) $$invalidate(2, onHoverDay = $$props.onHoverDay);
-		if ('onHoverWeek' in $$props) $$invalidate(3, onHoverWeek = $$props.onHoverWeek);
-		if ('onClickDay' in $$props) $$invalidate(4, onClickDay = $$props.onClickDay);
-		if ('onClickWeek' in $$props) $$invalidate(5, onClickWeek = $$props.onClickWeek);
-		if ('onContextMenuDay' in $$props) $$invalidate(6, onContextMenuDay = $$props.onContextMenuDay);
-		if ('onContextMenuWeek' in $$props) $$invalidate(7, onContextMenuWeek = $$props.onContextMenuWeek);
-		if ('onNavigateDailyNote' in $$props) $$invalidate(17, onNavigateDailyNote = $$props.onNavigateDailyNote);
-		if ('onClickMonth' in $$props) $$invalidate(18, onClickMonth = $$props.onClickMonth);
-		if ('onClickQuarter' in $$props) $$invalidate(19, onClickQuarter = $$props.onClickQuarter);
-		if ('onClickYear' in $$props) $$invalidate(20, onClickYear = $$props.onClickYear);
-		if ('onPointerLeave' in $$props) $$invalidate(8, onPointerLeave = $$props.onPointerLeave);
+		if ('settingsStore' in $$props) $$subscribe_settingsStore($$invalidate(2, settingsStore = $$props.settingsStore));
+		if ('dailyNotesStore' in $$props) $$subscribe_dailyNotesStore($$invalidate(3, dailyNotesStore = $$props.dailyNotesStore));
+		if ('weeklyNotesStore' in $$props) $$subscribe_weeklyNotesStore($$invalidate(4, weeklyNotesStore = $$props.weeklyNotesStore));
+		if ('dateTagsStore' in $$props) $$subscribe_dateTagsStore($$invalidate(5, dateTagsStore = $$props.dateTagsStore));
+		if ('activeDailyDateStore' in $$props) $$subscribe_activeDailyDateStore($$invalidate(6, activeDailyDateStore = $$props.activeDailyDateStore));
+		if ('activeFileStore' in $$props) $$subscribe_activeFileStore($$invalidate(7, activeFileStore = $$props.activeFileStore));
+		if ('onHoverDay' in $$props) $$invalidate(8, onHoverDay = $$props.onHoverDay);
+		if ('onHoverWeek' in $$props) $$invalidate(9, onHoverWeek = $$props.onHoverWeek);
+		if ('onClickDay' in $$props) $$invalidate(10, onClickDay = $$props.onClickDay);
+		if ('onClickWeek' in $$props) $$invalidate(11, onClickWeek = $$props.onClickWeek);
+		if ('onContextMenuDay' in $$props) $$invalidate(12, onContextMenuDay = $$props.onContextMenuDay);
+		if ('onContextMenuWeek' in $$props) $$invalidate(13, onContextMenuWeek = $$props.onContextMenuWeek);
+		if ('onNavigateDailyNote' in $$props) $$invalidate(23, onNavigateDailyNote = $$props.onNavigateDailyNote);
+		if ('onClickMonth' in $$props) $$invalidate(24, onClickMonth = $$props.onClickMonth);
+		if ('onClickQuarter' in $$props) $$invalidate(25, onClickQuarter = $$props.onClickQuarter);
+		if ('onClickYear' in $$props) $$invalidate(26, onClickYear = $$props.onClickYear);
+		if ('onPointerLeave' in $$props) $$invalidate(14, onPointerLeave = $$props.onPointerLeave);
 	};
 
 	$$self.$$.update = () => {
-		if ($$self.$$.dirty[0] & /*$settings*/ 512) {
-			$$invalidate(10, today = getToday($settings));
+		if ($$self.$$.dirty[0] & /*$settingsStore*/ 32768) {
+			tick($settingsStore);
 		}
 
-		if ($$self.$$.dirty[0] & /*$activeDailyDate*/ 33554432) {
-			$$invalidate(22, selectedDailyDate = $activeDailyDate);
+		if ($$self.$$.dirty[1] & /*$activeDailyDateStore*/ 2) {
+			$$invalidate(28, selectedDailyDate = $activeDailyDateStore);
 		}
 
-		if ($$self.$$.dirty[0] & /*selectedDailyDate, $dailyNotes*/ 20971520) {
-			$$invalidate(12, previousDailyNote = selectedDailyDate
-			? getAdjacentDailyNote(selectedDailyDate, $dailyNotes, "previous")
+		if ($$self.$$.dirty[0] & /*selectedDailyDate, $dailyNotesStore*/ 1342177280) {
+			$$invalidate(18, previousDailyNote = selectedDailyDate
+			? getAdjacentDailyNote(selectedDailyDate, $dailyNotesStore, "previous")
 			: null);
 		}
 
-		if ($$self.$$.dirty[0] & /*selectedDailyDate, $dailyNotes*/ 20971520) {
-			$$invalidate(13, nextDailyNote = selectedDailyDate
-			? getAdjacentDailyNote(selectedDailyDate, $dailyNotes, "next")
+		if ($$self.$$.dirty[0] & /*selectedDailyDate, $dailyNotesStore*/ 1342177280) {
+			$$invalidate(19, nextDailyNote = selectedDailyDate
+			? getAdjacentDailyNote(selectedDailyDate, $dailyNotesStore, "next")
 			: null);
 		}
 
-		if ($$self.$$.dirty[0] & /*$settings, $dateTags*/ 8389120) {
-			$$invalidate(14, calendarKey = `${$settings.localeOverride}:${$settings.weekStart}:${$dateTags.version}`);
+		if ($$self.$$.dirty[0] & /*$settingsStore, $dailyNotesStore, $weeklyNotesStore*/ 1610645504 | $$self.$$.dirty[1] & /*$dateTagsStore*/ 1) {
+			$$invalidate(20, calendarKey = `${$settingsStore.localeOverride}:${$settingsStore.weekStart}:${$dateTagsStore.version}:${getIndexKey($dailyNotesStore)}:${getIndexKey($weeklyNotesStore)}`);
 		}
 	};
 
 	return [
 		displayedMonth,
 		sources,
+		settingsStore,
+		dailyNotesStore,
+		weeklyNotesStore,
+		dateTagsStore,
+		activeDailyDateStore,
+		activeFileStore,
 		onHoverDay,
 		onHoverWeek,
 		onClickDay,
@@ -4967,13 +5254,13 @@ function instance($$self, $$props, $$invalidate) {
 		onContextMenuDay,
 		onContextMenuWeek,
 		onPointerLeave,
-		$settings,
+		$settingsStore,
 		today,
 		calendarEl,
 		previousDailyNote,
 		nextDailyNote,
 		calendarKey,
-		$activeFile,
+		$activeFileStore,
 		navigateToDailyNote,
 		onNavigateDailyNote,
 		onClickMonth,
@@ -4981,41 +5268,48 @@ function instance($$self, $$props, $$invalidate) {
 		onClickYear,
 		tick,
 		selectedDailyDate,
-		$dateTags,
-		$dailyNotes,
-		$activeDailyDate,
-		calendarbase_displayedMonth_binding,
+		$weeklyNotesStore,
+		$dailyNotesStore,
+		$dateTagsStore,
+		$activeDailyDateStore,
+		isolatedcalendar_displayedMonth_binding,
 		click_handler,
 		click_handler_1,
 		div1_binding
 	];
 }
 
-class Calendar extends SvelteComponent$1 {
+class Calendar extends SvelteComponent {
 	constructor(options) {
 		super();
 
-		init$1(
+		init(
 			this,
 			options,
 			instance,
 			create_fragment,
-			not_equal$1,
+			not_equal,
 			{
 				displayedMonth: 0,
 				sources: 1,
-				onHoverDay: 2,
-				onHoverWeek: 3,
-				onClickDay: 4,
-				onClickWeek: 5,
-				onContextMenuDay: 6,
-				onContextMenuWeek: 7,
-				onNavigateDailyNote: 17,
-				onClickMonth: 18,
-				onClickQuarter: 19,
-				onClickYear: 20,
-				onPointerLeave: 8,
-				tick: 21
+				settingsStore: 2,
+				dailyNotesStore: 3,
+				weeklyNotesStore: 4,
+				dateTagsStore: 5,
+				activeDailyDateStore: 6,
+				activeFileStore: 7,
+				onHoverDay: 8,
+				onHoverWeek: 9,
+				onClickDay: 10,
+				onClickWeek: 11,
+				onContextMenuDay: 12,
+				onContextMenuWeek: 13,
+				onNavigateDailyNote: 23,
+				onClickMonth: 24,
+				onClickQuarter: 25,
+				onClickYear: 26,
+				onPointerLeave: 14,
+				tick: 27
 			},
 			add_css,
 			[-1, -1]
@@ -5023,7 +5317,7 @@ class Calendar extends SvelteComponent$1 {
 	}
 
 	get tick() {
-		return this.$$.ctx[21];
+		return this.$$.ctx[27];
 	}
 }
 
@@ -5040,53 +5334,57 @@ function showFileMenu(app, file, position) {
     fileMenu.showAtPosition(position);
 }
 
-function dateTagTitle(date) {
-    return getDateTagEntries(date, get_store_value(dateTags))
+/** Surface exact #YYYY-MM-DD tags as a calendar dot and native hover title. */
+function createDateTagsSource(dateTagsStore) {
+    const dateTagTitle = (date) => getDateTagEntries(date, get_store_value(dateTagsStore))
         .map((entry) => `${entry.description} (${entry.file.path})`)
         .join("\n");
+    return {
+        getDailyMetadata: async (date) => {
+            const title = dateTagTitle(date);
+            return title
+                ? {
+                    classes: ["has-date-tag"],
+                    dataAttributes: { title },
+                    dots: [
+                        {
+                            className: "date-tag",
+                            color: "default",
+                            isFilled: false,
+                        },
+                    ],
+                }
+                : { dots: [] };
+        },
+        getWeeklyMetadata: async () => ({ dots: [] }),
+    };
 }
-/** Surface exact #YYYY-MM-DD tags as a calendar dot and native hover title. */
-const dateTagsSource = {
-    getDailyMetadata: async (date) => {
-        const title = dateTagTitle(date);
-        return title
-            ? {
-                classes: ["has-date-tag"],
-                dataAttributes: { title },
-                dots: [
-                    {
-                        className: "date-tag",
-                        color: "default",
-                        isFilled: false,
-                    },
-                ],
-            }
-            : { dots: [] };
-    },
-    getWeeklyMetadata: async () => ({ dots: [] }),
-};
+const dateTagsSource = createDateTagsSource(dateTags);
 
 const getStreakClasses = (files) => {
     return classList({
         "has-note": files.length > 0,
     });
 };
-const streakSource = {
-    getDailyMetadata: async (date) => {
-        const files = getDailyNotesForDate(date, get_store_value(dailyNotes));
-        return {
-            classes: getStreakClasses(files),
-            dots: [],
-        };
-    },
-    getWeeklyMetadata: async (date) => {
-        const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotes));
-        return {
-            classes: getStreakClasses(file ? [file] : []),
-            dots: [],
-        };
-    },
-};
+function createStreakSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
+    return {
+        getDailyMetadata: async (date) => {
+            const files = getDailyNotesForDate(date, get_store_value(dailyNotesStore));
+            return {
+                classes: getStreakClasses(files),
+                dots: [],
+            };
+        },
+        getWeeklyMetadata: async (date) => {
+            const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotesStore), get_store_value(settingsStore));
+            return {
+                classes: getStreakClasses(file ? [file] : []),
+                dots: [],
+            };
+        },
+    };
+}
+const streakSource = createStreakSource(dailyNotes, weeklyNotes, settings);
 
 function getNoteTags(note) {
     var _a;
@@ -5115,22 +5413,25 @@ function getFormattedTagAttributes(notes) {
     }
     return attrs;
 }
-const customTagsSource = {
-    getDailyMetadata: async (date) => {
-        const files = getDailyNotesForDate(date, get_store_value(dailyNotes));
-        return {
-            dataAttributes: getFormattedTagAttributes(files),
-            dots: [],
-        };
-    },
-    getWeeklyMetadata: async (date) => {
-        const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotes));
-        return {
-            dataAttributes: getFormattedTagAttributes(file ? [file] : []),
-            dots: [],
-        };
-    },
-};
+function createCustomTagsSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
+    return {
+        getDailyMetadata: async (date) => {
+            const files = getDailyNotesForDate(date, get_store_value(dailyNotesStore));
+            return {
+                dataAttributes: getFormattedTagAttributes(files),
+                dots: [],
+            };
+        },
+        getWeeklyMetadata: async (date) => {
+            const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotesStore), get_store_value(settingsStore));
+            return {
+                dataAttributes: getFormattedTagAttributes(file ? [file] : []),
+                dots: [],
+            };
+        },
+    };
+}
+const customTagsSource = createCustomTagsSource(dailyNotes, weeklyNotes, settings);
 
 async function getNumberOfRemainingTasks(note) {
     if (!note) {
@@ -5168,25 +5469,24 @@ async function getDotsForNotes$1(notes) {
         },
     ];
 }
-const tasksSource = {
-    getDailyMetadata: async (date) => {
-        const dots = await getDotsForNotes$1(getDailyNotesForDate(date, get_store_value(dailyNotes)));
-        return {
-            dots,
-        };
-    },
-    getWeeklyMetadata: async (date) => {
-        const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotes));
-        const dots = await getDotsForDailyNote$1(file);
-        return {
-            dots,
-        };
-    },
-};
+function createTasksSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
+    return {
+        getDailyMetadata: async (date) => {
+            const dots = await getDotsForNotes$1(getDailyNotesForDate(date, get_store_value(dailyNotesStore)));
+            return { dots };
+        },
+        getWeeklyMetadata: async (date) => {
+            const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotesStore), get_store_value(settingsStore));
+            const dots = await getDotsForDailyNote$1(file);
+            return { dots };
+        },
+    };
+}
+const tasksSource = createTasksSource(dailyNotes, weeklyNotes, settings);
 
 const NUM_MAX_DOTS = 5;
-async function getWordLengthAsDots(note) {
-    const { wordsPerDot = DEFAULT_WORDS_PER_DOT } = get_store_value(settings);
+async function getWordLengthAsDots(note, settingsStore = settings) {
+    const { wordsPerDot = DEFAULT_WORDS_PER_DOT } = get_store_value(settingsStore);
     if (!note || wordsPerDot <= 0) {
         return 0;
     }
@@ -5195,11 +5495,11 @@ async function getWordLengthAsDots(note) {
     const numDots = wordCount / wordsPerDot;
     return clamp(Math.floor(numDots), 1, NUM_MAX_DOTS);
 }
-async function getDotsForDailyNote(dailyNote) {
+async function getDotsForDailyNote(dailyNote, settingsStore = settings) {
     if (!dailyNote) {
         return [];
     }
-    const numSolidDots = await getWordLengthAsDots(dailyNote);
+    const numSolidDots = await getWordLengthAsDots(dailyNote, settingsStore);
     const dots = [];
     for (let i = 0; i < numSolidDots; i++) {
         dots.push({
@@ -5209,11 +5509,11 @@ async function getDotsForDailyNote(dailyNote) {
     }
     return dots;
 }
-async function getDotsForNotes(notes) {
+async function getDotsForNotes(notes, settingsStore = settings) {
     if (!notes.length) {
         return [];
     }
-    const wordCounts = await Promise.all(notes.map(getWordLengthAsDots));
+    const wordCounts = await Promise.all(notes.map((note) => getWordLengthAsDots(note, settingsStore)));
     const numSolidDots = clamp(wordCounts.reduce((total, count) => total + count, 0), 0, NUM_MAX_DOTS);
     return Array.from({ length: numSolidDots }, () => ({
         className: "",
@@ -5221,27 +5521,39 @@ async function getDotsForNotes(notes) {
         isFilled: true,
     }));
 }
-const wordCountSource = {
-    getDailyMetadata: async (date) => {
-        const dots = await getDotsForNotes(getDailyNotesForDate(date, get_store_value(dailyNotes)));
-        return {
-            dots,
-        };
-    },
-    getWeeklyMetadata: async (date) => {
-        const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotes));
-        const dots = await getDotsForDailyNote(file);
-        return {
-            dots,
-        };
-    },
-};
+function createWordCountSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
+    return {
+        getDailyMetadata: async (date) => {
+            const dots = await getDotsForNotes(getDailyNotesForDate(date, get_store_value(dailyNotesStore)), settingsStore);
+            return { dots };
+        },
+        getWeeklyMetadata: async (date) => {
+            const file = getWeeklyNoteForDate(date, get_store_value(weeklyNotesStore), get_store_value(settingsStore));
+            const dots = await getDotsForDailyNote(file, settingsStore);
+            return { dots };
+        },
+    };
+}
+const wordCountSource = createWordCountSource(dailyNotes, weeklyNotes, settings);
 
 const periodicIntervalForHeader = {
     month: "monthly",
     quarter: "quarterly",
     year: "yearly",
 };
+function getConfiguredWeekStart(date, settings) {
+    return withWeeklyMomentLocale(date, settings).startOf("week");
+}
+function getDailyIndexOptionsForSettings(settings) {
+    return {
+        locale: settings
+            ? resolveCalendarLocale(settings.localeOverride)
+            : undefined,
+        metadataDateFormat: settings === null || settings === void 0 ? void 0 : settings.metadataDateFormat,
+        metadataDateProperty: settings === null || settings === void 0 ? void 0 : settings.metadataDateProperty,
+        useMetadataDates: settings === null || settings === void 0 ? void 0 : settings.useMetadataDates,
+    };
+}
 class CalendarView extends obsidian.ItemView {
     constructor(leaf) {
         super(leaf);
@@ -5353,12 +5665,7 @@ class CalendarView extends obsidian.ItemView {
         this.updateActiveFile();
     }
     getDailyIndexOptions() {
-        var _a, _b, _c;
-        return {
-            metadataDateFormat: (_a = this.settings) === null || _a === void 0 ? void 0 : _a.metadataDateFormat,
-            metadataDateProperty: (_b = this.settings) === null || _b === void 0 ? void 0 : _b.metadataDateProperty,
-            useMetadataDates: (_c = this.settings) === null || _c === void 0 ? void 0 : _c.useMetadataDates,
-        };
+        return getDailyIndexOptionsForSettings(this.settings);
     }
     dismissHoverPopover() {
         var _a;
@@ -5378,7 +5685,7 @@ class CalendarView extends obsidian.ItemView {
             this.dismissHoverPopover();
             return false;
         }
-        const note = getDailyNoteForDate(date, get_store_value(dailyNotes));
+        const note = getDailyNoteForDate(date, get_store_value(dailyNotes), this.getDailyIndexOptions());
         const dateTagEntry = getDateTagEntries(date, get_store_value(dateTags))[0];
         const targetFile = note || (dateTagEntry === null || dateTagEntry === void 0 ? void 0 : dateTagEntry.file);
         if (!targetFile) {
@@ -5393,16 +5700,16 @@ class CalendarView extends obsidian.ItemView {
             this.dismissHoverPopover();
             return false;
         }
-        const note = getWeeklyNoteForDate(date, get_store_value(weeklyNotes));
+        const note = getWeeklyNoteForDate(date, get_store_value(weeklyNotes), this.settings);
         if (!note) {
             return false;
         }
-        const { format } = getWeeklyNoteSettings();
-        this.app.workspace.trigger("link-hover", this, targetEl, date.format(format), note.path);
+        const { format } = resolveWeeklyNoteSettings(this.settings);
+        this.app.workspace.trigger("link-hover", this, targetEl, formatWeeklyNoteDate(date, format, this.settings), note.path);
         return true;
     }
     onContextMenuDay(date, event) {
-        const notes = getDailyNotesForDate(date, get_store_value(dailyNotes));
+        const notes = getDailyNotesForDate(date, get_store_value(dailyNotes), this.getDailyIndexOptions());
         const taggedEntries = getDateTagEntries(date, get_store_value(dateTags));
         if (!notes.length && !taggedEntries.length) {
             return false;
@@ -5432,7 +5739,7 @@ class CalendarView extends obsidian.ItemView {
         return true;
     }
     onContextMenuWeek(date, event) {
-        const note = getWeeklyNoteForDate(date, get_store_value(weeklyNotes));
+        const note = getWeeklyNoteForDate(date, get_store_value(weeklyNotes), this.settings);
         if (!note) {
             return false;
         }
@@ -5490,55 +5797,64 @@ class CalendarView extends obsidian.ItemView {
                 this.calendar.$set({ displayedMonth: date });
                 return;
             }
-            date = getDateFromWeeklyNoteFile(activeLeaf.view.file);
+            date = getDateFromWeeklyNoteFile(activeLeaf.view.file, this.settings);
             if (date) {
                 this.calendar.$set({ displayedMonth: date });
             }
         }
     }
-    async openNoteFile(file, inNewTab, selectedDailyDate) {
+    async openNoteFile(file, inNewTab, selectedDailyDate, actionContext) {
+        var _a;
         const { workspace } = this.app;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const mode = this.app.vault.getConfig("defaultViewMode");
         const leaf = getNoteLeaf(inNewTab);
         await leaf.openFile(file, { active: true, state: { mode } });
         activeFile.setFile(file, selectedDailyDate);
+        (_a = actionContext === null || actionContext === void 0 ? void 0 : actionContext.onFileOpened) === null || _a === void 0 ? void 0 : _a.call(actionContext, file, selectedDailyDate);
         workspace.setActiveLeaf(leaf, { focus: true });
     }
-    async openDailyFile(file, date, inNewTab) {
-        await this.openNoteFile(file, inNewTab, date);
+    async openDailyFile(file, date, inNewTab, actionContext) {
+        await this.openNoteFile(file, inNewTab, date, actionContext);
     }
-    async openOrCreateWeeklyNote(date, inNewTab) {
-        const startOfWeek = date.clone().startOf("week");
-        const existingFile = getWeeklyNoteForDate(date, get_store_value(weeklyNotes));
+    async openOrCreateWeeklyNote(date, inNewTab, actionContext) {
+        const actionSettings = (actionContext === null || actionContext === void 0 ? void 0 : actionContext.settings) || this.settings;
+        const startOfWeek = getConfiguredWeekStart(date, actionSettings);
+        const existingFile = getWeeklyNoteForDate(startOfWeek, (actionContext === null || actionContext === void 0 ? void 0 : actionContext.weeklyNotesIndex) || get_store_value(weeklyNotes), actionSettings);
         if (!existingFile) {
-            await tryToCreateWeeklyNote(startOfWeek, inNewTab, this.settings, (file) => {
+            await tryToCreateWeeklyNote(startOfWeek, inNewTab, actionSettings, (file) => {
+                var _a;
                 activeFile.setFile(file);
+                (_a = actionContext === null || actionContext === void 0 ? void 0 : actionContext.onFileOpened) === null || _a === void 0 ? void 0 : _a.call(actionContext, file);
             });
             return;
         }
-        await this.openNoteFile(existingFile, inNewTab);
+        await this.openNoteFile(existingFile, inNewTab, undefined, actionContext);
     }
-    async openOrCreateDailyNote(date, inNewTab) {
-        const existingFiles = getDailyNotesForDate(date, get_store_value(dailyNotes));
+    async openOrCreateDailyNote(date, inNewTab, actionContext) {
+        const actionSettings = (actionContext === null || actionContext === void 0 ? void 0 : actionContext.settings) || this.settings;
+        const existingFiles = getDailyNotesForDate(date, (actionContext === null || actionContext === void 0 ? void 0 : actionContext.dailyNotesIndex) || get_store_value(dailyNotes), getDailyIndexOptionsForSettings(actionSettings));
         if (!existingFiles.length) {
-            await tryToCreateDailyNote(date, inNewTab, this.settings, (dailyNote) => {
+            await tryToCreateDailyNote(date, inNewTab, actionSettings, (dailyNote) => {
+                var _a;
                 activeFile.setFile(dailyNote, date);
+                (_a = actionContext === null || actionContext === void 0 ? void 0 : actionContext.onFileOpened) === null || _a === void 0 ? void 0 : _a.call(actionContext, dailyNote, date);
             });
             return;
         }
         if (existingFiles.length > 1) {
             showFilePicker({
                 files: existingFiles,
-                onChoose: (file) => this.openDailyFile(file, date, inNewTab),
+                onChoose: (file) => this.openDailyFile(file, date, inNewTab, actionContext),
                 text: "More than one note is associated with this date.",
                 title: `Choose a note for ${date.format("LL")}`,
             });
             return;
         }
-        await this.openDailyFile(existingFiles[0], date, inNewTab);
+        await this.openDailyFile(existingFiles[0], date, inNewTab, actionContext);
     }
-    async openOrCreatePeriodicNote(granularity, date, inNewTab) {
+    async openOrCreatePeriodicNote(granularity, date, inNewTab, actionContext) {
+        const actionSettings = (actionContext === null || actionContext === void 0 ? void 0 : actionContext.settings) || this.settings;
         const interval = periodicIntervalForHeader[granularity];
         if (!appHasPeriodicNotesPluginLoaded(interval)) {
             new obsidian.Notice(`Enable ${interval.replace(/^./, (letter) => letter.toUpperCase())} Notes in Periodic Notes first.`);
@@ -5546,10 +5862,14 @@ class CalendarView extends obsidian.ItemView {
         }
         const existingFile = getExistingPeriodicNote(granularity, date);
         if (existingFile) {
-            await this.openNoteFile(existingFile, inNewTab);
+            await this.openNoteFile(existingFile, inNewTab, undefined, actionContext);
             return;
         }
-        await tryToCreatePeriodicNote(granularity, date, inNewTab, this.settings, (file) => activeFile.setFile(file));
+        await tryToCreatePeriodicNote(granularity, date, inNewTab, actionSettings, (file) => {
+            var _a;
+            activeFile.setFile(file);
+            (_a = actionContext === null || actionContext === void 0 ? void 0 : actionContext.onFileOpened) === null || _a === void 0 ? void 0 : _a.call(actionContext, file);
+        });
     }
     async navigateToExistingDailyNote(date) {
         var _a;
@@ -5558,47 +5878,218 @@ class CalendarView extends obsidian.ItemView {
     }
 }
 
-/** Renders ```erin-calendar blocks in reading view. */
+const BOOLEAN_SETTING_KEYS = [
+    "shouldConfirmBeforeCreate",
+    "showMonthlyNote",
+    "showQuarterlyNote",
+    "showYearlyNote",
+    "showWeeklyNote",
+    "showDateTags",
+    "useMetadataDates",
+];
+const STRING_SETTING_KEYS = [
+    "weekdayLabelFormat",
+    "weeklyNoteFormat",
+    "weeklyNoteTemplate",
+    "weeklyNoteFolder",
+    "metadataDateProperty",
+    "metadataDateFormat",
+    "localeOverride",
+];
+const WEEK_START_OPTIONS = new Set([
+    "locale",
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+]);
+const SETTING_KEYS = new Set([
+    "wordsPerDot",
+    "weekdayLabelFormat",
+    "weekStart",
+    "shouldConfirmBeforeCreate",
+    "showMonthlyNote",
+    "showQuarterlyNote",
+    "showYearlyNote",
+    "showWeeklyNote",
+    "weeklyNoteFormat",
+    "weeklyNoteTemplate",
+    "weeklyNoteFolder",
+    "showDateTags",
+    "useMetadataDates",
+    "metadataDateProperty",
+    "metadataDateFormat",
+    "localeOverride",
+]);
+function isRecord(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isBooleanSettingKey(key) {
+    return BOOLEAN_SETTING_KEYS.includes(key);
+}
+function isStringSettingKey(key) {
+    return STRING_SETTING_KEYS.includes(key);
+}
+/**
+ * Parses the contents of an `erin-calendar` fenced block as YAML.
+ *
+ * Only known, correctly-typed settings are returned. Invalid settings never
+ * prevent the calendar from rendering; they are omitted and explained in
+ * `diagnostics` instead.
+ */
+function parseEmbedSettings(source) {
+    if (source.trim() === "") {
+        return { overrides: {}, diagnostics: [] };
+    }
+    let parsed;
+    try {
+        parsed = obsidian.parseYaml(source);
+    }
+    catch (error) {
+        const detail = error instanceof Error ? `: ${error.message}` : "";
+        return {
+            overrides: {},
+            diagnostics: [`Could not parse Erin Calendar embed settings${detail}`],
+        };
+    }
+    // Obsidian's YAML parser returns null for a block containing only comments.
+    if (parsed === null || parsed === undefined) {
+        return { overrides: {}, diagnostics: [] };
+    }
+    if (!isRecord(parsed)) {
+        return {
+            overrides: {},
+            diagnostics: ["Erin Calendar embed settings must be a YAML mapping."],
+        };
+    }
+    const overrides = {};
+    const diagnostics = [];
+    const target = overrides;
+    for (const [key, value] of Object.entries(parsed)) {
+        if (!SETTING_KEYS.has(key)) {
+            diagnostics.push(`Unknown Erin Calendar embed setting: ${key}.`);
+            continue;
+        }
+        if (key === "wordsPerDot") {
+            if (typeof value === "number" && Number.isFinite(value)) {
+                target[key] = value;
+            }
+            else {
+                diagnostics.push("Embed setting wordsPerDot must be a finite number.");
+            }
+            continue;
+        }
+        if (key === "weekStart") {
+            if (typeof value === "string" && WEEK_START_OPTIONS.has(value)) {
+                target[key] = value;
+            }
+            else {
+                diagnostics.push("Embed setting weekStart must be locale, sunday, monday, tuesday, wednesday, thursday, friday, or saturday.");
+            }
+            continue;
+        }
+        if (isBooleanSettingKey(key)) {
+            if (typeof value === "boolean") {
+                target[key] = value;
+            }
+            else {
+                diagnostics.push(`Embed setting ${key} must be true or false.`);
+            }
+            continue;
+        }
+        if (isStringSettingKey(key)) {
+            if (typeof value === "string") {
+                target[key] = value;
+            }
+            else {
+                diagnostics.push(`Embed setting ${key} must be a string.`);
+            }
+        }
+    }
+    return { overrides, diagnostics };
+}
+/** Returns a per-embed settings object without mutating the global settings. */
+function mergeEmbedSettings(globalSettings, overrides) {
+    return Object.assign(Object.assign({}, globalSettings), overrides);
+}
+
+/** Renders `erin-calendar` blocks with settings local to each fenced block. */
 class CalendarEmbed extends obsidian.MarkdownRenderChild {
-    constructor(containerEl, plugin) {
+    constructor(containerEl, plugin, source) {
         super(containerEl);
         this.plugin = plugin;
         this.calendar = null;
+        this.settingsUnsubscribe = null;
+        this.effectiveSettings = writable(defaultSettings);
+        this.dailyNotes = createDailyNotesStore(this.effectiveSettings);
+        this.weeklyNotes = createWeeklyNotesStore(this.effectiveSettings);
+        this.dateTags = createDateTagsStore();
+        this.selection = createCalendarSelection(this.effectiveSettings);
+        this.sources = [
+            createCustomTagsSource(this.dailyNotes, this.weeklyNotes, this.effectiveSettings),
+            createStreakSource(this.dailyNotes, this.weeklyNotes, this.effectiveSettings),
+            createWordCountSource(this.dailyNotes, this.weeklyNotes, this.effectiveSettings),
+            createTasksSource(this.dailyNotes, this.weeklyNotes, this.effectiveSettings),
+            createDateTagsSource(this.dateTags),
+        ];
+        this.onCalendarDataChanged = () => {
+            this.refreshCalendarData();
+        };
+        const parsedSettings = parseEmbedSettings(source);
+        this.overrides = parsedSettings.overrides;
+        this.diagnostics = parsedSettings.diagnostics;
     }
     onload() {
         this.containerEl.addClass("erin-calendar-embed");
-        void dateTags.reindex(this.plugin.options.showDateTags);
+        this.renderDiagnostics();
+        this.settingsUnsubscribe = settings.subscribe((globalSettings) => {
+            this.effectiveSettings.set(mergeEmbedSettings(globalSettings, this.overrides));
+            this.refreshCalendarData();
+        });
+        this.registerEvent(this.plugin.app.vault.on("create", this.onCalendarDataChanged));
+        this.registerEvent(this.plugin.app.vault.on("delete", this.onCalendarDataChanged));
+        this.registerEvent(this.plugin.app.vault.on("modify", this.onCalendarDataChanged));
+        this.registerEvent(this.plugin.app.vault.on("rename", this.onCalendarDataChanged));
+        this.registerEvent(this.plugin.app.metadataCache.on("changed", this.onCalendarDataChanged));
+        this.registerEvent(this.plugin.app.workspace.on("file-open", this.onCalendarDataChanged));
+        this.registerEvent(
+        // Periodic Notes changes can alter the inherited weekly note path.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.plugin.app.workspace.on("periodic-notes:settings-updated", this.onCalendarDataChanged));
         this.calendar = new Calendar({
             target: this.containerEl,
             props: {
                 onClickDay: (date, inNewSplit) => {
                     void this.plugin
                         .getOrCreateCalendarView()
-                        .then((view) => view.openOrCreateDailyNote(date, inNewSplit));
+                        .then((view) => view.openOrCreateDailyNote(date, inNewSplit, this.getActionContext()));
                     return true;
                 },
                 onClickWeek: (date, inNewSplit) => {
                     void this.plugin
                         .getOrCreateCalendarView()
-                        .then((view) => view.openOrCreateWeeklyNote(date, inNewSplit));
+                        .then((view) => view.openOrCreateWeeklyNote(date, inNewSplit, this.getActionContext()));
                     return true;
                 },
                 onClickMonth: (date, inNewSplit) => {
                     void this.plugin
                         .getOrCreateCalendarView()
-                        .then((view) => view.openOrCreatePeriodicNote("month", date, inNewSplit));
+                        .then((view) => view.openOrCreatePeriodicNote("month", date, inNewSplit, this.getActionContext()));
                     return true;
                 },
                 onClickQuarter: (date, inNewSplit) => {
                     void this.plugin
                         .getOrCreateCalendarView()
-                        .then((view) => view.openOrCreatePeriodicNote("quarter", date, inNewSplit));
+                        .then((view) => view.openOrCreatePeriodicNote("quarter", date, inNewSplit, this.getActionContext()));
                     return true;
                 },
                 onClickYear: (date, inNewSplit) => {
                     void this.plugin
                         .getOrCreateCalendarView()
-                        .then((view) => view.openOrCreatePeriodicNote("year", date, inNewSplit));
+                        .then((view) => view.openOrCreatePeriodicNote("year", date, inNewSplit, this.getActionContext()));
                     return true;
                 },
                 onHoverDay: () => true,
@@ -5608,22 +6099,63 @@ class CalendarEmbed extends obsidian.MarkdownRenderChild {
                 onNavigateDailyNote: (date) => {
                     void this.plugin
                         .getOrCreateCalendarView()
-                        .then((view) => view.openOrCreateDailyNote(date, false));
+                        .then((view) => view.openOrCreateDailyNote(date, false, this.getActionContext()));
                 },
-                sources: [
-                    customTagsSource,
-                    streakSource,
-                    wordCountSource,
-                    tasksSource,
-                    dateTagsSource,
-                ],
+                sources: this.sources,
+                settingsStore: this.effectiveSettings,
+                dailyNotesStore: this.dailyNotes,
+                weeklyNotesStore: this.weeklyNotes,
+                dateTagsStore: this.dateTags,
+                activeDailyDateStore: this.selection.activeDailyDate,
+                activeFileStore: this.selection.activeFile,
             },
         });
+        this.updateActiveFile();
     }
     onunload() {
-        var _a;
-        (_a = this.calendar) === null || _a === void 0 ? void 0 : _a.$destroy();
+        var _a, _b;
+        (_a = this.settingsUnsubscribe) === null || _a === void 0 ? void 0 : _a.call(this);
+        this.settingsUnsubscribe = null;
+        (_b = this.calendar) === null || _b === void 0 ? void 0 : _b.$destroy();
         this.calendar = null;
+    }
+    refreshCalendarData() {
+        var _a;
+        const currentSettings = get_store_value(this.effectiveSettings);
+        this.dailyNotes.reindex();
+        this.weeklyNotes.reindex();
+        void this.dateTags.reindex(currentSettings.showDateTags);
+        this.updateActiveFile();
+        (_a = this.calendar) === null || _a === void 0 ? void 0 : _a.tick();
+    }
+    updateActiveFile() {
+        const { view } = this.plugin.app.workspace.activeLeaf || {};
+        const file = view instanceof obsidian.FileView ? view.file : null;
+        this.selection.activeFile.setFile(file);
+    }
+    getActionContext() {
+        return {
+            settings: get_store_value(this.effectiveSettings),
+            dailyNotesIndex: get_store_value(this.dailyNotes),
+            weeklyNotesIndex: get_store_value(this.weeklyNotes),
+            onFileOpened: (file, selectedDailyDate) => {
+                this.selection.activeFile.setFile(file, selectedDailyDate);
+            },
+        };
+    }
+    renderDiagnostics() {
+        if (!this.diagnostics.length) {
+            return;
+        }
+        const diagnosticsEl = this.containerEl.createDiv({
+            cls: "erin-calendar-embed-diagnostics",
+        });
+        diagnosticsEl.setAttribute("role", "alert");
+        diagnosticsEl.createEl("strong", { text: "Erin Calendar settings:" });
+        const list = diagnosticsEl.createEl("ul");
+        this.diagnostics.forEach((diagnostic) => {
+            list.createEl("li", { text: diagnostic });
+        });
     }
 }
 
@@ -5655,8 +6187,8 @@ class CalendarPlugin extends obsidian.Plugin {
         });
         await this.loadOptions();
         this.addSettingTab(new CalendarSettingsTab(this.app, this));
-        this.registerMarkdownCodeBlockProcessor("erin-calendar", (_source, el, ctx) => {
-            ctx.addChild(new CalendarEmbed(el, this));
+        this.registerMarkdownCodeBlockProcessor("erin-calendar", (source, el, ctx) => {
+            ctx.addChild(new CalendarEmbed(el, this, source));
         });
     }
     async initLeaf() {

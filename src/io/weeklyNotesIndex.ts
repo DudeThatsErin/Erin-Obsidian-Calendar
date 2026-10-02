@@ -1,11 +1,23 @@
 import type { Moment } from "moment";
 import type { TFile } from "obsidian";
-import { getDateUID, getWeeklyNoteSettings } from "obsidian-daily-notes-interface";
 
 import {
   getConfiguredNoteForDate,
   parseConfiguredNoteDate,
 } from "./notePaths";
+import {
+  formatWeeklyNoteDate,
+  getWeeklyNoteDateUID,
+  resolveWeeklyNoteSettings,
+  resolveWeeklyMomentLocale,
+  type WeeklyNoteSettingsInput,
+  withWeeklyMomentLocale,
+} from "./weeklyNoteSettings";
+
+export type {
+  ResolvedWeeklyNoteSettings,
+  WeeklyNoteSettingsInput,
+} from "./weeklyNoteSettings";
 
 export interface WeeklyNotesIndex {
   filesByPath: Record<string, TFile>;
@@ -13,24 +25,35 @@ export interface WeeklyNotesIndex {
 }
 
 /** Parse weekly paths with the same quoted-format fallback as daily notes. */
-export function getDateFromWeeklyNoteFile(file: TFile): Moment | null {
-  return parseConfiguredNoteDate(file, getWeeklyNoteSettings());
+export function getDateFromWeeklyNoteFile(
+  file: TFile,
+  settings?: WeeklyNoteSettingsInput
+): Moment | null {
+  return parseConfiguredNoteDate(
+    file,
+    resolveWeeklyNoteSettings(settings),
+    resolveWeeklyMomentLocale(settings) || undefined
+  );
 }
 
-export function getAllWeeklyNotesIndex(): WeeklyNotesIndex {
+export function getAllWeeklyNotesIndex(
+  settings?: WeeklyNoteSettingsInput
+): WeeklyNotesIndex {
   const index: WeeklyNotesIndex = {
     filesByPath: {},
     filesByDate: {},
   };
+  const weeklyNoteSettings = resolveWeeklyNoteSettings(settings);
+  const locale = resolveWeeklyMomentLocale(settings) || undefined;
 
   window.app.vault.getMarkdownFiles().forEach((file) => {
     index.filesByPath[file.path] = file;
-    const date = getDateFromWeeklyNoteFile(file);
+    const date = parseConfiguredNoteDate(file, weeklyNoteSettings, locale);
     if (!date) {
       return;
     }
 
-    const id = getDateUID(date, "week");
+    const id = getWeeklyNoteDateUID(date, settings);
     const dateFiles = index.filesByDate[id] || [];
     if (!dateFiles.some((existing) => existing.path === file.path)) {
       dateFiles.push(file);
@@ -47,16 +70,24 @@ export function getAllWeeklyNotesIndex(): WeeklyNotesIndex {
  */
 export function getWeeklyNoteForDate(
   date: Moment,
-  index: WeeklyNotesIndex | null
+  index: WeeklyNotesIndex | null,
+  settings?: WeeklyNoteSettingsInput
 ): TFile | null {
   if (!index) {
     return null;
   }
 
+  const weeklyNoteSettings = resolveWeeklyNoteSettings(settings);
+  const localizedDate = withWeeklyMomentLocale(date, settings);
   const canonical = getConfiguredNoteForDate(
-    date.clone().startOf("week"),
-    getWeeklyNoteSettings(),
-    index.filesByPath
+    // The caller may supply a start-of-week date calculated for an embedded
+    // calendar's locale/week-start. Do not reapply Moment's global locale
+    // here; the UID fallback below remains for legacy callers.
+    localizedDate,
+    weeklyNoteSettings,
+    index.filesByPath,
+    (formattedDate, format) =>
+      formatWeeklyNoteDate(formattedDate, format, settings)
   );
-  return canonical || index.filesByDate[getDateUID(date, "week")]?.[0] || null;
+  return canonical || index.filesByDate[getWeeklyNoteDateUID(localizedDate, settings)]?.[0] || null;
 }

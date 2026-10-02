@@ -3,6 +3,11 @@ import { normalizePath } from "obsidian";
 import type { TFile } from "obsidian";
 import type { IPeriodicNoteSettings } from "obsidian-daily-notes-interface";
 
+export type NoteDateFormatter = (date: Moment, format: string) => string;
+
+const defaultDateFormatter: NoteDateFormatter = (date, format) =>
+  date.format(format);
+
 function normalizedFolder(folder = ""): string {
   return normalizePath(folder)
     .replace(/^\/+|\/+$/g, "")
@@ -12,14 +17,15 @@ function normalizedFolder(folder = ""): string {
 /** Build the exact vault path which a configured note would use for a date. */
 export function getConfiguredNotePath(
   date: Moment,
-  settings: IPeriodicNoteSettings
+  settings: IPeriodicNoteSettings,
+  formatDate: NoteDateFormatter = defaultDateFormatter
 ): string | null {
   const format = settings?.format;
   if (!format) {
     return null;
   }
 
-  const filename = `${date.format(format)}.md`;
+  const filename = `${formatDate(date, format)}.md`;
   const folder = normalizedFolder(settings.folder);
   return normalizePath(folder ? `${folder}/${filename}` : filename);
 }
@@ -53,7 +59,8 @@ export function getRelativeConfiguredNotePath(
  */
 export function parseConfiguredNoteDate(
   file: TFile,
-  settings: IPeriodicNoteSettings
+  settings: IPeriodicNoteSettings,
+  locale?: string
 ): Moment | null {
   const format = settings?.format;
   const relativePath = getRelativeConfiguredNotePath(file, settings);
@@ -61,12 +68,16 @@ export function parseConfiguredNoteDate(
     return null;
   }
 
-  const strict = window.moment(relativePath, format, true);
+  const strict = locale
+    ? window.moment(relativePath, format, locale, true)
+    : window.moment(relativePath, format, true);
   if (strict.isValid()) {
     return strict;
   }
 
-  const lenient = window.moment(relativePath, format, false);
+  const lenient = locale
+    ? window.moment(relativePath, format, locale, false)
+    : window.moment(relativePath, format, false);
   return lenient.isValid() && lenient.format(format) === relativePath
     ? lenient
     : null;
@@ -76,8 +87,9 @@ export function parseConfiguredNoteDate(
 export function getConfiguredNoteForDate(
   date: Moment,
   settings: IPeriodicNoteSettings,
-  notesByPath: Record<string, TFile>
+  notesByPath: Record<string, TFile>,
+  formatDate: NoteDateFormatter = defaultDateFormatter
 ): TFile | null {
-  const path = getConfiguredNotePath(date, settings);
+  const path = getConfiguredNotePath(date, settings, formatDate);
   return path ? notesByPath[path] || null : null;
 }

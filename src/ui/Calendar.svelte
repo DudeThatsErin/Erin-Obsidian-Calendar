@@ -2,34 +2,42 @@
 
 <script lang="ts">
   import type { Moment } from "moment";
-  import {
-    Calendar as CalendarBase,
-    configureGlobalMomentLocale,
-  } from "obsidian-calendar-ui";
-  import type { ICalendarSource } from "obsidian-calendar-ui";
+  import type { Readable } from "svelte/store";
   import { afterUpdate, onDestroy } from "svelte";
 
   import {
     getAdjacentDailyNote,
   } from "../io/dailyNotesIndex";
-  import type { DailyNoteEntry } from "../io/dailyNotesIndex";
+  import type { DailyNoteEntry, DailyNotesIndex } from "../io/dailyNotesIndex";
+  import type { WeeklyNotesIndex } from "../io/weeklyNotesIndex";
   import type { ISettings } from "src/settings";
+  import {
+    IsolatedCalendar,
+    resolveCalendarLocale,
+  } from "./isolatedCalendar";
+  import type { ICalendarSource } from "./isolatedCalendar";
   import {
     activeDailyDate,
     activeFile,
     dailyNotes,
     dateTags,
+    type IndexedDateTags,
     settings,
     weeklyNotes,
   } from "./stores";
 
-  let today: Moment;
+  let today: Moment = window.moment();
   let calendarEl: HTMLDivElement;
-
-  $: today = getToday($settings);
 
   export let displayedMonth: Moment = today;
   export let sources: ICalendarSource[];
+  /** Each embed may provide its own effective settings and indexed data. */
+  export let settingsStore: Readable<ISettings> = settings;
+  export let dailyNotesStore: Readable<DailyNotesIndex> = dailyNotes;
+  export let weeklyNotesStore: Readable<WeeklyNotesIndex> = weeklyNotes;
+  export let dateTagsStore: Readable<IndexedDateTags> = dateTags;
+  export let activeDailyDateStore: Readable<Moment | null> = activeDailyDate;
+  export let activeFileStore: Readable<string | null> = activeFile;
   export let onHoverDay: (
     date: Moment,
     targetEl: EventTarget,
@@ -57,26 +65,36 @@
   let previousDailyNote: DailyNoteEntry | null;
   let nextDailyNote: DailyNoteEntry | null;
   let calendarKey: string;
+  const indexKeys = new WeakMap<object, number>();
+  let nextIndexKey = 0;
 
-  export function tick() {
-    today = window.moment();
+  function getIndexKey(index: object | null): number {
+    if (!index) {
+      return 0;
+    }
+    let key = indexKeys.get(index);
+    if (key === undefined) {
+      key = ++nextIndexKey;
+      indexKeys.set(index, key);
+    }
+    return key;
   }
 
-  function getToday(settings: ISettings) {
-    configureGlobalMomentLocale(settings.localeOverride, settings.weekStart);
-    dailyNotes.reindex();
-    weeklyNotes.reindex();
-    return window.moment();
+  export function tick(calendarSettings: ISettings = $settingsStore) {
+    today = window
+      .moment()
+      .locale(resolveCalendarLocale(calendarSettings.localeOverride));
   }
 
-  $: selectedDailyDate = $activeDailyDate;
+  $: tick($settingsStore);
+  $: selectedDailyDate = $activeDailyDateStore;
   $: previousDailyNote = selectedDailyDate
-    ? getAdjacentDailyNote(selectedDailyDate, $dailyNotes, "previous")
+    ? getAdjacentDailyNote(selectedDailyDate, $dailyNotesStore, "previous")
     : null;
   $: nextDailyNote = selectedDailyDate
-    ? getAdjacentDailyNote(selectedDailyDate, $dailyNotes, "next")
+    ? getAdjacentDailyNote(selectedDailyDate, $dailyNotesStore, "next")
     : null;
-  $: calendarKey = `${$settings.localeOverride}:${$settings.weekStart}:${$dateTags.version}`;
+  $: calendarKey = `${$settingsStore.localeOverride}:${$settingsStore.weekStart}:${$dateTagsStore.version}:${getIndexKey($dailyNotesStore)}:${getIndexKey($weeklyNotesStore)}`;
 
   function navigateToDailyNote(note: DailyNoteEntry | null): void {
     if (note) {
@@ -136,7 +154,7 @@
       ".erin-calendar-quarter"
     ) || null;
 
-    if ($settings.showQuarterlyNote && title && year) {
+    if ($settingsStore.showQuarterlyNote && title && year) {
       if (!quarter) {
         quarter = title.ownerDocument.createElement("span");
         quarter.className = "erin-calendar-quarter";
@@ -150,33 +168,25 @@
 
     setHeaderAction(
       month,
-      $settings.showMonthlyNote,
+      $settingsStore.showMonthlyNote,
       "Open monthly note",
       (event) => onClickMonth(displayedMonth.clone(), isNewTabEvent(event))
     );
     setHeaderAction(
       quarter,
-      $settings.showQuarterlyNote,
+      $settingsStore.showQuarterlyNote,
       "Open quarterly note",
       (event) => onClickQuarter(displayedMonth.clone(), isNewTabEvent(event))
     );
     setHeaderAction(
       year,
-      $settings.showYearlyNote,
+      $settingsStore.showYearlyNote,
       "Open yearly note",
       (event) => onClickYear(displayedMonth.clone(), isNewTabEvent(event))
     );
   }
 
   afterUpdate(() => {
-    const format = $settings.weekdayLabelFormat || "ddd";
-    const singleLetter = format === "d";
-    calendarEl?.querySelectorAll<HTMLTableCellElement>("thead th").forEach((heading, index) => {
-      if ($settings.showWeeklyNote && index === 0) return;
-      const dayIndex = $settings.showWeeklyNote ? index - 1 : index;
-      const label = today.clone().startOf("week").add(dayIndex, "day").format(singleLetter ? "dd" : format);
-      heading.textContent = singleLetter ? label.charAt(0) : label;
-    });
     updatePeriodicHeaderActions();
   });
 
@@ -199,7 +209,7 @@
 
 <div bind:this={calendarEl} on:pointerleave={onPointerLeave}>
   {#key calendarKey}
-    <CalendarBase
+    <IsolatedCalendar
       {sources}
       {today}
       {onHoverDay}
@@ -209,9 +219,11 @@
       {onClickDay}
       {onClickWeek}
       bind:displayedMonth
-      localeData={today.localeData()}
-      selectedId={$activeFile}
-      showWeekNums={$settings.showWeeklyNote}
+      localeOverride={$settingsStore.localeOverride}
+      weekStart={$settingsStore.weekStart}
+      weekdayLabelFormat={$settingsStore.weekdayLabelFormat}
+      selectedId={$activeFileStore}
+      showWeekNums={$settingsStore.showWeeklyNote}
     />
   {/key}
 

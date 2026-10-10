@@ -15,6 +15,7 @@ export interface ISettings {
   weekdayLabelFormat: string;
   weekStart: IWeekStartOption;
   shouldConfirmBeforeCreate: boolean;
+  appendDailyNotesToMonthlyJournal: boolean;
 
   // Additional calendar links
   showMonthlyNote: boolean;
@@ -49,6 +50,7 @@ const weekdays = [
 export const defaultSettings = Object.freeze({
   calendarView: "month" as CalendarViewMode,
   shouldConfirmBeforeCreate: true,
+  appendDailyNotesToMonthlyJournal: false,
   weekStart: "locale" as IWeekStartOption,
 
   wordsPerDot: DEFAULT_WORDS_PER_DOT,
@@ -117,6 +119,7 @@ export class CalendarSettingsTab extends PluginSettingTab {
     this.addWeekdayLabelFormatSetting();
     this.addWeekStartSetting();
     this.addConfirmCreateSetting();
+    this.addAppendDailyNotesSetting();
     this.addShowWeeklyNoteSetting();
     this.addPeriodicHeaderSettings();
     this.addDateAssociationSettings();
@@ -215,6 +218,22 @@ export class CalendarSettingsTab extends PluginSettingTab {
         toggle.onChange(async (value) => {
           this.plugin.writeOptions(() => ({
             shouldConfirmBeforeCreate: value,
+          }));
+        });
+      });
+  }
+
+  addAppendDailyNotesSetting(): void {
+    new Setting(this.containerEl)
+      .setName("Append daily notes to monthly journal")
+      .setDesc(
+        "When enabled, clicking a calendar day appends a timestamped entry to its configured monthly Daily Note. Each day uses an H1 date heading and each entry uses an H2 time heading."
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.options.appendDailyNotesToMonthlyJournal);
+        toggle.onChange(async (value) => {
+          await this.plugin.writeOptions(() => ({
+            appendDailyNotesToMonthlyJournal: value,
           }));
         });
       });

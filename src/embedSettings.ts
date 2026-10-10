@@ -19,6 +19,7 @@ export interface EmbedSettingsParseResult {
 
 type BooleanSettingKey =
   | "shouldConfirmBeforeCreate"
+  | "appendDailyNotesToMonthlyJournal"
   | "showMonthlyNote"
   | "showQuarterlyNote"
   | "showYearlyNote"
@@ -37,6 +38,7 @@ type StringSettingKey =
 
 const BOOLEAN_SETTING_KEYS: readonly BooleanSettingKey[] = [
   "shouldConfirmBeforeCreate",
+  "appendDailyNotesToMonthlyJournal",
   "showMonthlyNote",
   "showQuarterlyNote",
   "showYearlyNote",
@@ -74,6 +76,7 @@ const SETTING_KEYS = new Set<keyof ISettings>([
   "weekdayLabelFormat",
   "weekStart",
   "shouldConfirmBeforeCreate",
+  "appendDailyNotesToMonthlyJournal",
   "showMonthlyNote",
   "showQuarterlyNote",
   "showYearlyNote",

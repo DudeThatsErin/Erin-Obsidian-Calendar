@@ -1,6 +1,6 @@
 {
   "name": "erin-calendar",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Personal calendar view for daily notes",
   "author": "Erin Skidds",
   "main": "main.js",

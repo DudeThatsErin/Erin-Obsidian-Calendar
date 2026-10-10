@@ -18,7 +18,10 @@ import {
   tryToCreatePeriodicNote,
 } from "src/io/periodicNotes";
 import type { HeaderNoteGranularity } from "src/io/periodicNotes";
-import { tryToCreateDailyNote } from "src/io/dailyNotes";
+import {
+  tryToAppendCalendarDailyNote,
+  tryToCreateDailyNote,
+} from "src/io/dailyNotes";
 import { tryToCreateWeeklyNote } from "src/io/weeklyNotes";
 import { getDateFromWeeklyNoteFile, getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
 import type { WeeklyNotesIndex } from "src/io/weeklyNotesIndex";
@@ -489,6 +492,13 @@ export default class CalendarView extends ItemView {
     actionContext?: CalendarActionContext
   ): Promise<void> {
     const actionSettings = actionContext?.settings || this.settings;
+    if (actionSettings.appendDailyNotesToMonthlyJournal) {
+      await tryToAppendCalendarDailyNote(date, inNewTab, (dailyNote) => {
+        activeFile.setFile(dailyNote, date);
+        actionContext?.onFileOpened?.(dailyNote, date);
+      });
+      return;
+    }
     const existingFiles = getDailyNotesForDate(
       date,
       actionContext?.dailyNotesIndex || get(dailyNotes),

@@ -9,6 +9,7 @@ export function getDefaultSettings(
       calendarView: "month",
       weekStart: "sunday",
       shouldConfirmBeforeCreate: false,
+      appendDailyNotesToMonthlyJournal: false,
       wordsPerDot: 50,
       weekdayLabelFormat: "ddd",
       showMonthlyNote: false,

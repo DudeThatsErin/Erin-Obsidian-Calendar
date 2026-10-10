@@ -32,7 +32,11 @@ jest.mock("src/ui/modal", () => ({
   createConfirmationDialog: jest.fn(),
 }));
 
-import { createCalendarDailyNote, expandDailyNoteTemplate } from "./dailyNotes";
+import {
+  buildMonthlyJournalEntry,
+  createCalendarDailyNote,
+  expandDailyNoteTemplate,
+} from "./dailyNotes";
 
 beforeEach(() => {
   mockDailyNoteSettings = {
@@ -59,6 +63,24 @@ it("uses the creation date for bare {{date}} while preserving selected-date toke
   ).toBe(
     "date: 2024-10-16\ntime: 13:45\ntitle: 2024-10-20\nnext: 2024-10-21\nyesterday: 2024-10-19"
   );
+});
+
+it("groups entries under one date heading with time subheadings", () => {
+  const date = moment("2026-10-10", "YYYY-MM-DD", true);
+  const firstEntry = buildMonthlyJournalEntry(
+    "---\nbanner: test\n---\n",
+    date,
+    moment("2026-10-10T09:05:00")
+  );
+  const secondEntry = buildMonthlyJournalEntry(
+    firstEntry,
+    date,
+    moment("2026-10-10T16:30:00")
+  );
+
+  expect(firstEntry).toContain("# Saturday, Oct 10\n\n## 9:05 AM");
+  expect(secondEntry).toContain("## 9:05 AM\n\n## 4:30 PM");
+  expect(secondEntry.match(/^# Saturday, Oct 10$/gm)).toHaveLength(1);
 });
 
 it("keeps the target filename and creates nested date paths", async () => {

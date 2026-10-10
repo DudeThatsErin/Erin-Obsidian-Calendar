@@ -1179,6 +1179,7 @@ const weekdays$1 = [
 const defaultSettings = Object.freeze({
     calendarView: "month",
     shouldConfirmBeforeCreate: true,
+    appendDailyNotesToMonthlyJournal: false,
     weekStart: "locale",
     wordsPerDot: DEFAULT_WORDS_PER_DOT,
     weekdayLabelFormat: "ddd",
@@ -1227,6 +1228,7 @@ class CalendarSettingsTab extends obsidian.PluginSettingTab {
         this.addWeekdayLabelFormatSetting();
         this.addWeekStartSetting();
         this.addConfirmCreateSetting();
+        this.addAppendDailyNotesSetting();
         this.addShowWeeklyNoteSetting();
         this.addPeriodicHeaderSettings();
         this.addDateAssociationSettings();
@@ -1311,6 +1313,19 @@ class CalendarSettingsTab extends obsidian.PluginSettingTab {
             toggle.onChange(async (value) => {
                 this.plugin.writeOptions(() => ({
                     shouldConfirmBeforeCreate: value,
+                }));
+            });
+        });
+    }
+    addAppendDailyNotesSetting() {
+        new obsidian.Setting(this.containerEl)
+            .setName("Append daily notes to monthly journal")
+            .setDesc("When enabled, clicking a calendar day appends a timestamped entry to its configured monthly Daily Note. Each day uses an H1 date heading and each entry uses an H2 time heading.")
+            .addToggle((toggle) => {
+            toggle.setValue(this.plugin.options.appendDailyNotesToMonthlyJournal);
+            toggle.onChange(async (value) => {
+                await this.plugin.writeOptions(() => ({
+                    appendDailyNotesToMonthlyJournal: value,
                 }));
             });
         });
@@ -2332,6 +2347,39 @@ async function createCalendarDailyNote(date) {
         return null;
     }
 }
+/** Build an entry grouped under an H1 date and an H2 timestamp. */
+function buildMonthlyJournalEntry(contents, date, now = window.moment()) {
+    const dateHeading = "# " + date.format("dddd, MMM D");
+    const timeHeading = "## " + now.format("h:mm A");
+    const hasDateHeading = contents
+        .split(/\r?\n/)
+        .some((line) => line.trim() === dateHeading);
+    const trimmedContents = contents.trimEnd();
+    const entry = hasDateHeading
+        ? timeHeading
+        : dateHeading + "\n\n" + timeHeading;
+    return trimmedContents + (trimmedContents ? "\n\n" : "") + entry + "\n\n";
+}
+/**
+ * Add a journal entry to the configured Daily Note. With a YYYY-MM Daily
+ * Notes format this appends every date to its month file.
+ */
+async function appendCalendarDailyNote(date, now = window.moment()) {
+    const app = window.app;
+    const { vault } = app;
+    const { format, folder } = getDailyNoteSettings();
+    const path = await getNotePath(folder, date.format(format));
+    let dailyNote = vault.getAbstractFileByPath(path);
+    if (!(dailyNote instanceof obsidian.TFile)) {
+        dailyNote = await createCalendarDailyNote(date);
+    }
+    if (!(dailyNote instanceof obsidian.TFile)) {
+        return null;
+    }
+    const contents = await vault.read(dailyNote);
+    await vault.append(dailyNote, buildMonthlyJournalEntry(contents, date, now));
+    return dailyNote;
+}
 /**
  * Create a Daily Note for a given date.
  */
@@ -2358,6 +2406,16 @@ async function tryToCreateDailyNote(date, inNewSplit, settings, cb) {
     else {
         await createFile();
     }
+}
+/** Append a timestamped entry, then open the monthly journal note. */
+async function tryToAppendCalendarDailyNote(date, inNewSplit, cb) {
+    const dailyNote = await appendCalendarDailyNote(date);
+    if (!dailyNote) {
+        return;
+    }
+    const leaf = getNoteLeaf(inNewSplit);
+    await leaf.openFile(dailyNote, { active: true });
+    cb === null || cb === void 0 ? void 0 : cb(dailyNote);
 }
 
 const templateDateUnits = {
@@ -6839,6 +6897,14 @@ class CalendarView extends obsidian.ItemView {
     }
     async openOrCreateDailyNote(date, inNewTab, actionContext) {
         const actionSettings = (actionContext === null || actionContext === void 0 ? void 0 : actionContext.settings) || this.settings;
+        if (actionSettings.appendDailyNotesToMonthlyJournal) {
+            await tryToAppendCalendarDailyNote(date, inNewTab, (dailyNote) => {
+                var _a;
+                activeFile.setFile(dailyNote, date);
+                (_a = actionContext === null || actionContext === void 0 ? void 0 : actionContext.onFileOpened) === null || _a === void 0 ? void 0 : _a.call(actionContext, dailyNote, date);
+            });
+            return;
+        }
         const existingFiles = getDailyNotesForDate(date, (actionContext === null || actionContext === void 0 ? void 0 : actionContext.dailyNotesIndex) || get_store_value(dailyNotes), getDailyIndexOptionsForSettings(actionSettings));
         if (!existingFiles.length) {
             await tryToCreateDailyNote(date, inNewTab, actionSettings, (dailyNote) => {
@@ -6886,6 +6952,7 @@ class CalendarView extends obsidian.ItemView {
 
 const BOOLEAN_SETTING_KEYS = [
     "shouldConfirmBeforeCreate",
+    "appendDailyNotesToMonthlyJournal",
     "showMonthlyNote",
     "showQuarterlyNote",
     "showYearlyNote",
@@ -6919,6 +6986,7 @@ const SETTING_KEYS = new Set([
     "weekdayLabelFormat",
     "weekStart",
     "shouldConfirmBeforeCreate",
+    "appendDailyNotesToMonthlyJournal",
     "showMonthlyNote",
     "showQuarterlyNote",
     "showYearlyNote",

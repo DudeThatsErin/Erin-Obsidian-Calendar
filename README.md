@@ -149,6 +149,7 @@ plugins and their corresponding settings.
 - Move directly to the previous or next existing daily note, skipping empty days.
 - Create missing daily notes using Obsidian's configured Daily Notes settings.
 - Honor Daily Notes folder/date formats, including nested paths such as `YYYY/MM/DD`.
+- Optionally append calendar day clicks to monthly journal notes. Enable **Append daily notes to monthly journal** and use `YYYY-MM` as the Daily Notes format; entries are grouped as `# Day, Mon D` then `## h:mm AM/PM`.
 - Display writing-progress dots based on note word count.
 - Optionally show week numbers and open weekly notes.
 

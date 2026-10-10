@@ -1,6 +1,5 @@
 import type { Moment, unitOfTime } from "moment";
-import { normalizePath, Notice } from "obsidian";
-import type { TFile } from "obsidian";
+import { normalizePath, Notice, TFile } from "obsidian";
 import {
   getDailyNoteSettings,
   getTemplateInfo,
@@ -139,6 +138,51 @@ export async function createCalendarDailyNote(date: Moment): Promise<TFile | nul
   }
 }
 
+/** Build an entry grouped under an H1 date and an H2 timestamp. */
+export function buildMonthlyJournalEntry(
+  contents: string,
+  date: Moment,
+  now: Moment = window.moment()
+): string {
+  const dateHeading = "# " + date.format("dddd, MMM D");
+  const timeHeading = "## " + now.format("h:mm A");
+  const hasDateHeading = contents
+    .split(/\r?\n/)
+    .some((line) => line.trim() === dateHeading);
+  const trimmedContents = contents.trimEnd();
+  const entry = hasDateHeading
+    ? timeHeading
+    : dateHeading + "\n\n" + timeHeading;
+
+  return trimmedContents + (trimmedContents ? "\n\n" : "") + entry + "\n\n";
+}
+
+/**
+ * Add a journal entry to the configured Daily Note. With a YYYY-MM Daily
+ * Notes format this appends every date to its month file.
+ */
+export async function appendCalendarDailyNote(
+  date: Moment,
+  now: Moment = window.moment()
+): Promise<TFile | null> {
+  const app = window.app;
+  const { vault } = app;
+  const { format, folder } = getDailyNoteSettings();
+  const path = await getNotePath(folder, date.format(format));
+  let dailyNote = vault.getAbstractFileByPath(path);
+
+  if (!(dailyNote instanceof TFile)) {
+    dailyNote = await createCalendarDailyNote(date);
+  }
+  if (!(dailyNote instanceof TFile)) {
+    return null;
+  }
+
+  const contents = await vault.read(dailyNote);
+  await vault.append(dailyNote, buildMonthlyJournalEntry(contents, date, now));
+  return dailyNote;
+}
+
 /**
  * Create a Daily Note for a given date.
  */
@@ -172,4 +216,19 @@ export async function tryToCreateDailyNote(
   } else {
     await createFile();
   }
+}
+
+/** Append a timestamped entry, then open the monthly journal note. */
+export async function tryToAppendCalendarDailyNote(
+  date: Moment,
+  inNewSplit: boolean,
+  cb?: (file: TFile) => void
+): Promise<void> {
+  const dailyNote = await appendCalendarDailyNote(date);
+  if (!dailyNote) {
+    return;
+  }
+  const leaf = getNoteLeaf(inNewSplit);
+  await leaf.openFile(dailyNote, { active: true });
+  cb?.(dailyNote);
 }

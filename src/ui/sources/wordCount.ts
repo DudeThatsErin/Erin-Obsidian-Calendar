@@ -5,7 +5,7 @@ import type { Readable } from "svelte/store";
 import { get } from "svelte/store";
 
 import { DEFAULT_WORDS_PER_DOT } from "src/constants";
-import { getDailyNotesForDate } from "src/io/dailyNotesIndex";
+import { getIndexedDailyNotesForDate } from "src/io/dailyNotesIndex";
 import { getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
 import type { ISettings } from "src/settings";
 
@@ -81,7 +81,7 @@ export function createWordCountSource(
   return {
     getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
       const dots = await getDotsForNotes(
-        getDailyNotesForDate(date, get(dailyNotesStore)),
+        getIndexedDailyNotesForDate(date, get(dailyNotesStore)),
         settingsStore
       );
       return { dots };

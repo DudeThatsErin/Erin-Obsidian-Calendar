@@ -4,7 +4,7 @@ import type { ICalendarSource, IDayMetadata, IDot } from "obsidian-calendar-ui";
 import type { Readable } from "svelte/store";
 import { get } from "svelte/store";
 
-import { getDailyNotesForDate } from "src/io/dailyNotesIndex";
+import { getIndexedDailyNotesForDate } from "src/io/dailyNotesIndex";
 import { getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
 import type { DailyNotesIndex } from "src/io/dailyNotesIndex";
 import type { WeeklyNotesIndex } from "src/io/weeklyNotesIndex";
@@ -64,7 +64,7 @@ export function createTasksSource(
   return {
     getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
       const dots = await getDotsForNotes(
-        getDailyNotesForDate(date, get(dailyNotesStore))
+        getIndexedDailyNotesForDate(date, get(dailyNotesStore))
       );
       return { dots };
     },

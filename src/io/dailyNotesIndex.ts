@@ -66,6 +66,47 @@ function addDateEntry(
   }
 }
 
+/** Whether one configured Daily Note filename represents several dates. */
+function isMonthlyDailyNoteFormat(date: Moment, format: string): boolean {
+  const filename = date.format(format);
+  return (
+    filename === date.clone().add(1, "day").format(format) &&
+    filename !== date.clone().add(1, "month").format(format)
+  );
+}
+
+/**
+ * Extract H1 journal headings in the form "Saturday, Oct 10" from a monthly
+ * note. The note filename supplies the year; the heading supplies the day.
+ */
+function getMonthlyJournalHeadingDates(
+  file: TFile,
+  month: Moment,
+  locale?: string
+): Moment[] {
+  const headings = window.app.metadataCache?.getFileCache(file)?.headings || [];
+  return headings.reduce((dates: Moment[], heading: { heading?: string; level?: number }) => {
+    if (heading.level !== 1 || !heading.heading) {
+      return dates;
+    }
+    const [, monthAndDay] = heading.heading.match(/^[^,]+,\s+(.+)$/) || [];
+    if (!monthAndDay) {
+      return dates;
+    }
+    const parsed = locale
+      ? window.moment(monthAndDay, "MMM D", locale, false)
+      : window.moment(monthAndDay, "MMM D", false);
+    if (!parsed.isValid() || parsed.month() !== month.month()) {
+      return dates;
+    }
+    const date = month.clone().date(parsed.date()).startOf("day");
+    if (date.month() === month.month()) {
+      dates.push(date);
+    }
+    return dates;
+  }, []);
+}
+
 /** Parse a daily note path using the exact Daily Notes folder and format. */
 export function getDateFromDailyNoteFile(
   file: TFile,
@@ -155,7 +196,14 @@ export function getAllDailyNotesIndex(
 
     const filenameDate = getDateFromDailyNoteFile(file, options);
     if (filenameDate) {
-      addDateEntry(index, filenameDate, file);
+      const { format } = dailyNoteSettings();
+      if (isMonthlyDailyNoteFormat(filenameDate, format)) {
+        getMonthlyJournalHeadingDates(file, filenameDate, options.locale).forEach(
+          (date) => addDateEntry(index, date, file)
+        );
+      } else {
+        addDateEntry(index, filenameDate, file);
+      }
     }
 
     const metadataDate = getDateFromDailyNoteMetadata(file, options);
@@ -188,6 +236,14 @@ export function getAllDailyNotesByPath(): Record<string, TFile> {
  * deliberately first, so `YYYYMM` and quoted formats find their existing
  * shared note before a new note can be created.
  */
+/** Return only notes explicitly indexed for this calendar day. */
+export function getIndexedDailyNotesForDate(
+  date: Moment,
+  index: DailyNotesIndex | null
+): TFile[] {
+  return index?.filesByDate[getDateUID(date, "day")] || [];
+}
+
 export function getDailyNotesForDate(
   date: Moment,
   index: DailyNotesIndex | null,

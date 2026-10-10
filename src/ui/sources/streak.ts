@@ -4,7 +4,7 @@ import type { ICalendarSource, IDayMetadata } from "obsidian-calendar-ui";
 import type { Readable } from "svelte/store";
 import { get } from "svelte/store";
 
-import { getDailyNotesForDate } from "src/io/dailyNotesIndex";
+import { getIndexedDailyNotesForDate } from "src/io/dailyNotesIndex";
 import { getWeeklyNoteForDate } from "src/io/weeklyNotesIndex";
 import type { DailyNotesIndex } from "src/io/dailyNotesIndex";
 import type { WeeklyNotesIndex } from "src/io/weeklyNotesIndex";
@@ -26,7 +26,7 @@ export function createStreakSource(
 ): ICalendarSource {
   return {
     getDailyMetadata: async (date: Moment): Promise<IDayMetadata> => {
-      const files = getDailyNotesForDate(date, get(dailyNotesStore));
+      const files = getIndexedDailyNotesForDate(date, get(dailyNotesStore));
       return {
         classes: getStreakClasses(files),
         dots: [],

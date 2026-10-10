@@ -8,6 +8,7 @@ let mockDailyNoteSettings = {
 };
 let mockMarkdownFiles: TFile[] = [];
 let mockFrontmatter: Record<string, Record<string, unknown>> = {};
+let mockHeadings: Record<string, { heading: string; level: number }[]> = {};
 
 jest.mock(
   "obsidian",
@@ -33,6 +34,7 @@ import {
   getAllDailyNotesIndex,
   getAllDailyNotesByPath,
   getDailyNotesForDate,
+  getIndexedDailyNotesForDate,
   getDateFromDailyNoteFile,
 } from "./dailyNotesIndex";
 
@@ -47,16 +49,20 @@ beforeEach(() => {
   };
   mockMarkdownFiles = [];
   mockFrontmatter = {};
+  mockHeadings = {};
   (window as unknown as { moment: typeof moment }).moment = moment;
   moment.locale("en");
   (window as unknown as {
     app: {
-      metadataCache: { getFileCache: (file: TFile) => { frontmatter: Record<string, unknown> } };
+      metadataCache: { getFileCache: (file: TFile) => { frontmatter: Record<string, unknown>; headings: { heading: string; level: number }[] } };
       vault: { getMarkdownFiles: () => TFile[] };
     };
   }).app = {
     metadataCache: {
-      getFileCache: (note) => ({ frontmatter: mockFrontmatter[note.path] }),
+      getFileCache: (note) => ({
+        frontmatter: mockFrontmatter[note.path],
+        headings: mockHeadings[note.path],
+      }),
     },
     vault: {
       getMarkdownFiles: () => mockMarkdownFiles,
@@ -98,6 +104,39 @@ describe("daily note paths", () => {
     const notes = getAllDailyNotesIndex();
     expect(
       getDailyNotesForDate(moment("2024-03-21", "YYYY-MM-DD", true), notes)
+    ).toEqual([monthlyNote]);
+  });
+
+  it("marks only H1 date headings in a monthly journal", () => {
+    mockDailyNoteSettings = { folder: "journal", format: "YYYY-MM" };
+    const monthlyNote = file("journal/2026-10.md");
+    mockMarkdownFiles = [monthlyNote];
+    mockHeadings = {
+      "journal/2026-10.md": [
+        { heading: "Saturday, Oct 10", level: 1 },
+        { heading: "Monday, Oct 12", level: 1 },
+        { heading: "9:05 AM", level: 2 },
+      ],
+    };
+
+    const index = getAllDailyNotesIndex();
+    expect(
+      getIndexedDailyNotesForDate(
+        moment("2026-10-10", "YYYY-MM-DD", true),
+        index
+      )
+    ).toEqual([monthlyNote]);
+    expect(
+      getIndexedDailyNotesForDate(
+        moment("2026-10-11", "YYYY-MM-DD", true),
+        index
+      )
+    ).toEqual([]);
+    expect(
+      getDailyNotesForDate(
+        moment("2026-10-11", "YYYY-MM-DD", true),
+        index
+      )
     ).toEqual([monthlyNote]);
   });
 

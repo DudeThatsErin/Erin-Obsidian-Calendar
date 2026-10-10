@@ -1667,6 +1667,40 @@ function addDateEntry(index, date, file) {
         index.entries.push({ date: date.clone().startOf("day"), file });
     }
 }
+/** Whether one configured Daily Note filename represents several dates. */
+function isMonthlyDailyNoteFormat(date, format) {
+    const filename = date.format(format);
+    return (filename === date.clone().add(1, "day").format(format) &&
+        filename !== date.clone().add(1, "month").format(format));
+}
+/**
+ * Extract H1 journal headings in the form "Saturday, Oct 10" from a monthly
+ * note. The note filename supplies the year; the heading supplies the day.
+ */
+function getMonthlyJournalHeadingDates(file, month, locale) {
+    var _a, _b;
+    const headings = ((_b = (_a = window.app.metadataCache) === null || _a === void 0 ? void 0 : _a.getFileCache(file)) === null || _b === void 0 ? void 0 : _b.headings) || [];
+    return headings.reduce((dates, heading) => {
+        if (heading.level !== 1 || !heading.heading) {
+            return dates;
+        }
+        const [, monthAndDay] = heading.heading.match(/^[^,]+,\s+(.+)$/) || [];
+        if (!monthAndDay) {
+            return dates;
+        }
+        const parsed = locale
+            ? window.moment(monthAndDay, "MMM D", locale, false)
+            : window.moment(monthAndDay, "MMM D", false);
+        if (!parsed.isValid() || parsed.month() !== month.month()) {
+            return dates;
+        }
+        const date = month.clone().date(parsed.date()).startOf("day");
+        if (date.month() === month.month()) {
+            dates.push(date);
+        }
+        return dates;
+    }, []);
+}
 /** Parse a daily note path using the exact Daily Notes folder and format. */
 function getDateFromDailyNoteFile(file, options = {}) {
     return parseConfiguredNoteDate(file, dailyNoteSettings(), options.locale);
@@ -1730,7 +1764,13 @@ function getAllDailyNotesIndex(options = {}) {
         index.filesByPath[file.path] = file;
         const filenameDate = getDateFromDailyNoteFile(file, options);
         if (filenameDate) {
-            addDateEntry(index, filenameDate, file);
+            const { format } = dailyNoteSettings();
+            if (isMonthlyDailyNoteFormat(filenameDate, format)) {
+                getMonthlyJournalHeadingDates(file, filenameDate, options.locale).forEach((date) => addDateEntry(index, date, file));
+            }
+            else {
+                addDateEntry(index, filenameDate, file);
+            }
         }
         const metadataDate = getDateFromDailyNoteMetadata(file, options);
         if (metadataDate) {
@@ -1748,6 +1788,10 @@ function getAllDailyNotesIndex(options = {}) {
  * deliberately first, so `YYYYMM` and quoted formats find their existing
  * shared note before a new note can be created.
  */
+/** Return only notes explicitly indexed for this calendar day. */
+function getIndexedDailyNotesForDate(date, index) {
+    return (index === null || index === void 0 ? void 0 : index.filesByDate[getDateUID(date, "day")]) || [];
+}
 function getDailyNotesForDate(date, index, options = {}) {
     if (!index) {
         return [];
@@ -6433,7 +6477,7 @@ const getStreakClasses = (files) => {
 function createStreakSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
     return {
         getDailyMetadata: async (date) => {
-            const files = getDailyNotesForDate(date, get_store_value(dailyNotesStore));
+            const files = getIndexedDailyNotesForDate(date, get_store_value(dailyNotesStore));
             return {
                 classes: getStreakClasses(files),
                 dots: [],
@@ -6480,7 +6524,7 @@ function getFormattedTagAttributes(notes) {
 function createCustomTagsSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
     return {
         getDailyMetadata: async (date) => {
-            const files = getDailyNotesForDate(date, get_store_value(dailyNotesStore));
+            const files = getIndexedDailyNotesForDate(date, get_store_value(dailyNotesStore));
             return {
                 dataAttributes: getFormattedTagAttributes(files),
                 dots: [],
@@ -6536,7 +6580,7 @@ async function getDotsForNotes$1(notes) {
 function createTasksSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
     return {
         getDailyMetadata: async (date) => {
-            const dots = await getDotsForNotes$1(getDailyNotesForDate(date, get_store_value(dailyNotesStore)));
+            const dots = await getDotsForNotes$1(getIndexedDailyNotesForDate(date, get_store_value(dailyNotesStore)));
             return { dots };
         },
         getWeeklyMetadata: async (date) => {
@@ -6588,7 +6632,7 @@ async function getDotsForNotes(notes, settingsStore = settings) {
 function createWordCountSource(dailyNotesStore, weeklyNotesStore, settingsStore) {
     return {
         getDailyMetadata: async (date) => {
-            const dots = await getDotsForNotes(getDailyNotesForDate(date, get_store_value(dailyNotesStore)), settingsStore);
+            const dots = await getDotsForNotes(getIndexedDailyNotesForDate(date, get_store_value(dailyNotesStore)), settingsStore);
             return { dots };
         },
         getWeeklyMetadata: async (date) => {
